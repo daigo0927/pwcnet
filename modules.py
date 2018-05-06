@@ -49,6 +49,7 @@ class WarpingLayer(object):
         # flow:(#batch, height, width, 2)
         with tf.variable_scope(self.name) as vs:
             grid_b, grid_y, grid_x = get_grid(x)
+            flow = tf.cast(flow, tf.int32)
             warped_gy = tf.add(grid_y, flow[:,:,:,1]) # flow_y
             warped_gx = tf.add(grid_x, flow[:,:,:,0]) # flow_x
             warped_indices = tf.stack([grid_b, warped_gy, warped_gx], axis = 3)
@@ -125,6 +126,8 @@ class ContextNetwork(object):
 
     def __call__(self, feature, flow, reuse = True):
         with tf.variable_scope(self.name) as vs:
+            if reuse:
+                vs.reuse_variables()
             x = tf.concat([feature, flow], axis = 3)
             x = tf.layers.Conv2D(128, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
