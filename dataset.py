@@ -142,7 +142,6 @@ class FlyingThings(BaseDataset):
 # ============================================================
 class Sintel(BaseDataset):
 
-
     def __init__(self, dataset_dir, train_or_test, mode = 'final', color = 'rgb', cropper = 'random', crop_shape = None, resize_shape = None, resize_scale = None):
         super(Sintel, self).__init__()
         self.mode = mode
@@ -157,9 +156,6 @@ class Sintel(BaseDataset):
         p = Path(dataset_dir) / (train_or_test + '.txt')
         if p.exists(): self.has_txt()
         else: self.has_no_txt()
-
-    
-
     
     def has_no_txt(self):
         p = Path(self.dataset_dir)
@@ -191,6 +187,14 @@ class KITTI(BaseDataset):
 
     def has_no_txt(self):
         pass
+
+def get_dataset(dataset_name):
+    return {
+        'Sintel': Sintel,
+        'SintelClean': SintelClean,
+        'SintelFinal': SintelFinal,
+        'FlyingChairs': FlyingChairs,
+    }[dataset_name]
 
 
 if __name__ == '__main__':
