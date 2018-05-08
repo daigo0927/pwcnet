@@ -38,19 +38,18 @@ class PWCNet(object):
                 
                 if l == 0:
                     flow = tf.zeros((b, h, w, 2), dtype = tf.int32)
+                    reuse = False
                 else:
                     flow = tf.image.resize_bilinear(flow, (h, w))*2
+                    reuse = True
 
                 # warping -> costvolume -> optical flow estimation
                 feature_1_warped = self.warp_layer(feature_1, flow)
-                cost = self.cv_layer(feature_0, feature_1_warped)
+                cost = self.cv_layer(feature_0, feature_1_warped, reuse = reuse)
                 feature, flow = self.of_estimators[l](feature_0, cost, flow)
 
                 # context considering process
-                if l == 0:
-                    flow = self.context(feature, flow, reuse = False)
-                else:
-                    flow = self.context(feature, flow)
+                flow = self.context(feature, flow, reuse = reuse)
 
                 # stop processing at the defined level
                 if l == self.output_level:
@@ -67,4 +66,4 @@ class PWCNet(object):
 
     @property
     def vars(self):
-        return [var for var in tf.global_variables() if self.name in var]
+        return [var for var in tf.global_variables() if self.name in var.name and not 'cost' in var.name]
