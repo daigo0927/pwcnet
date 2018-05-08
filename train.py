@@ -30,7 +30,7 @@ class Trainer(object):
         self.eval_loader = data.DataLoader(eval_dataset, **load_args)
         
     def _build_graph(self):
-        self.images = tf.placeholder(tf.float32, shape = [None]+args.image_size+[3],
+        self.images = tf.placeholder(tf.float32, shape = [None, 2]+args.image_size+[3],
                                      name = 'images')
         self.flows_gt = tf.placeholder(tf.float32, shape = [None]+args.image_size+[2],
                                        name = 'flows')
