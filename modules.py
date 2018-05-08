@@ -66,6 +66,8 @@ class CostVolumeLayer(object):
 
     def __call__(self, x, warped, reuse = True):
         with tf.variable_scope(self.name) as vs:
+            if reuse:
+                vs.reuse_variables()
             b, h, w, f = tf.unstack(tf.shape(x))
             cost_length = (2*self.s_range+1)**2
             cost_init = [tf.Variable(tf.zeros(shape = (b, h, w)),
