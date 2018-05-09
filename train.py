@@ -63,8 +63,8 @@ class Trainer(object):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
 
-                loss_reg, epe \
-                    = self.sess.run([self.loss_reg, self.epe],
+                _, loss_reg, epe \
+                    = self.sess.run([self.optimizer, self.loss_reg, self.epe],
                                     feed_dict = {self.images: images,
                                                  self.flows_gt: flows_gt})
 
@@ -77,7 +77,7 @@ class Trainer(object):
                 flows_gt_eval = flows_gt_eval.numpy()
 
                 loss_eval, epe_eval \
-                    = self.sess.run([self.loss, self.epe],
+                    = self.sess.run([self.loss_reg, self.epe],
                                     feed_dict = {self.images: images_eval,
                                                  self.flows_gt: flows_gt_eval})
                 loss_evals.append(loss_eval)
