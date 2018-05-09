@@ -34,9 +34,9 @@ class Trainer(object):
         self.eval_loader = data.DataLoader(eval_dataset, **load_args)
         
     def _build_graph(self):
-        self.images = tf.placeholder(tf.float32, shape = [self.args.batch_size, 2]+args.image_size+[3],
+        self.images = tf.placeholder(tf.float32, shape = [None, 2]+args.image_size+[3],
                                      name = 'images')
-        self.flows_gt = tf.placeholder(tf.float64, shape = [self.args.batch_size]+args.image_size+[2],
+        self.flows_gt = tf.placeholder(tf.float64, shape = [None]+args.image_size+[2],
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm)
