@@ -34,23 +34,21 @@ class Trainer(object):
         self.eval_loader = data.DataLoader(eval_dataset, **load_args)
         
     def _build_graph(self):
-        self.images_0 = tf.placeholder(tf.float32, shape = [4]+args.image_size+[3],
-                                       name = 'images_0')
-        self.images_1 = tf.placeholder(tf.float32, shape = [4]+args.image_size+[3],
-                                       name = 'images_1')
-        self.flows_gt = tf.placeholder(tf.float32, shape = [4]+args.image_size+[2],
+        self.images = tf.placeholder(tf.float32, shape = [self.args.batch_size, 2]+args.image_size+[3],
+                                     name = 'images')
+        self.flows_gt = tf.placeholder(tf.float64, shape = [self.args.batch_size]+args.image_size+[2],
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm)
-        self.flows_pyramid, self.summaries = self.model(self.images_0, self.images_1)
-
-        weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
+        self.flows_pyramid, self.summaries = self.model(self.images[:,0], self.images[:,1])
+        
         self.loss, self.epe, self.loss_levels, self.epe_levels \
-            = multiscale_loss(self.flows_gt, self.flows_pyramid, self.args.weights)\
-            + self.args.gamma * weights_l2
+            = multiscale_loss(self.flows_gt, self.flows_pyramid, self.args.weights)
+        weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
+        self.loss_reg = self.loss + self.args.gamma*weights_l2
         
         self.optimizer = tf.train.AdamOptimizer()\
-                         .minimize(self.loss, var_list = self.model.vars)
+                         .minimize(self.loss_reg, var_list = self.model.vars)
         self.saver = tf.train.Saver()
 
         if self.args.resume is not None:
@@ -65,12 +63,13 @@ class Trainer(object):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
 
-                loss, epe, loss_levels, epe_levels \
-                    = self.sess.run([self.loss, self.epe, self.loss_levels, self.epe_levels],
+                loss_reg, epe \
+                    = self.sess.run([self.loss_reg, self.epe],
                                     feed_dict = {self.images: images,
                                                  self.flows_gt: flows_gt})
+
                 if i%10 == 0:
-                    show_progress(e+1, i+1, self.num_batches, loss, epe)
+                    show_progress(e+1, i+1, self.num_batches, loss_reg, epe)
 
             loss_evals, epe_evals = [], []
             for images_eval, flows_gt_eval in self.eval_loader:
@@ -96,10 +95,12 @@ if __name__ == '__main__':
                         help = 'Target dataset, [SintelClean]')
     parser.add_argument('--dataset_dir', type = str, required = True,
                         help = 'Directory containing target dataset')
+    parser.add_argument('--n_epoch', type = int, default = 100,
+                        help = '# of epochs [100]')
     parser.add_argument('--batch_size', type = int, default = 4,
                         help = 'Batch size [4]')
     parser.add_argument('--num_workers', type = int, default = 8,
-                        help = '# worker for data loading [8]')
+                        help = '# of workers for data loading [8]')
 
     parser.add_argument('--crop_type', type = str, default = 'random',
                         help = 'Crop type for raw data [random]')
