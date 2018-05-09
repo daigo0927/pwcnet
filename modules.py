@@ -1,4 +1,5 @@
 import tensorflow as tf
+from functools import partial
 
 from utils import get_grid
 
@@ -57,6 +58,20 @@ class WarpingLayer(object):
             warped_x = tf.gather_nd(x, warped_indices)
             return warped_x
 
+
+def pad2d(x, vpad, hpad):
+    return tf.pad(x, [[0, 0], vpad, hpad, [0, 0]])
+
+def crop2d(x, vcrop, hcrop):
+    return tf.keras.layers.Cropping2D([vcrop, hcrop])(x)
+
+def get_cost(x, warped, shift):
+    v, h = shift # vertical/horizontal element
+    vt, vb, hl, hr =  max(v,0), abs(min(v,0)), max(h,0), abs(min(h,0)) # top/bottom left/right
+    x_pad = pad2d(x, [vt, vb], [hl, hr])
+    warped_pad = pad2d(warped, [vb, vt], [hr, hl])
+    cost_pad = x_pad*warped_pad
+    return tf.reduce_sum(crop2d(cost_pad, [vt, vb], [hl, hr]), axis = 3)
             
 class CostVolumeLayer(object):
 
@@ -70,33 +85,22 @@ class CostVolumeLayer(object):
                 vs.reuse_variables()
             b, h, w, f = tf.unstack(tf.shape(x))
             cost_length = (2*self.s_range+1)**2
-            cost_init = [tf.Variable(tf.zeros(shape = (b, h, w)),
-                                     validate_shape = False) for _ in range(cost_length)]
-            tf.variables_initializer(cost_init)
 
             cost = [0]*cost_length
-            cost[0] = tf.assign(cost_init[0], tf.reduce_sum(warped*x, axis = 3))
-
+            cost[0] = tf.reduce_sum(warped*x, axis  = 3)
             I = 1
+            get_c = partial(get_cost, x, warped)
             for i in range(1, self.s_range+1):
-                cost[I] = tf.assign(cost_init[I][:,i:,:],
-                                    tf.reduce_sum(warped[:,:-i,:,:] * x[:,i:,:,:], axis = 3)); I+=1
-                cost[I] = tf.assign(cost_init[I][:,:-i,:],
-                                    tf.reduce_sum(warped[:,i:,:,:] * x[:,:-i,:,:], axis = 3)); I+=1
-                cost[I] = tf.assign(cost_init[I][:,:,i:],
-                                    tf.reduce_sum(warped[:,:,:-i,:] * x[:,:,i:,:], axis = 3)); I+=1
-                cost[I] = tf.assign(cost_init[I][:,:,:-i],
-                                    tf.reduce_sum(warped[:,:,i:,:] * x[:,:,:-i,:], axis = 3)); I+=1
+                cost[I] = get_c(shift = [-i, 0]); I+=1
+                cost[I] = get_c(shift = [i, 0]); I+=1
+                cost[I] = get_c(shift = [0, -i]); I+=1
+                cost[I] = get_c(shift = [0, i]); I+=1
 
                 for j in range(1, self.s_range+1):
-                    cost[I] = tf.assign(cost_init[I][:,i:,j:],
-                                        tf.reduce_sum(warped[:,:-i,:-j,:] * x[:,i:,j:,:], axis = 3)); I+=1
-                    cost[I] = tf.assign(cost_init[I][:,:-i,:-j],
-                                        tf.reduce_sum(warped[:,i:,j:,:] * x[:,:-i,:-j,:], axis = 3)); I+=1
-                    cost[I] = tf.assign(cost_init[I][:,i:,:-j],
-                                        tf.reduce_sum(warped[:,:-i,j:,:] * x[:,i:,:-j,:], axis = 3)); I+=1
-                    cost[I] = tf.assign(cost_init[I][:,:-i,j:],
-                                        tf.reduce_sum(warped[:,i:,:-j,:] * x[:,:-i,j:,:], axis = 3)); I+=1
+                    cost[I] = get_c(shift = [-i, -j]); I+=1
+                    cost[I] = get_c(shift = [i, j]); I+=1
+                    cost[I] = get_c(shift = [-i, j]); I+=1
+                    cost[I] = get_c(shift = [i, -j]); I+=1
 
             return tf.stack(cost, axis = 3) / cost_length
             
