@@ -66,4 +66,4 @@ class PWCNet(object):
 
     @property
     def vars(self):
-        return [var for var in tf.global_variables() if self.name in var.name and not 'cost' in var.name]
+        return [var for var in tf.global_variables() if self.name in var.name in var.name]
