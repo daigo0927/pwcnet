@@ -10,5 +10,5 @@ def get_grid(x):
     return Bg, Yg, Xg # return collectively for elementwise processing
 
 def show_progress(epoch, batch, batch_total, loss, epe):
-    sys.stdout.write(f'\r{epoch} epoch: [{batch}/{batch_total}, loss: {loss}, epe: {acc}]')
+    sys.stdout.write(f'\r{epoch} epoch: [{batch}/{batch_total}, loss: {loss}, epe: {epe}]')
     sys.stdout.flush()
