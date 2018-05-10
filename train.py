@@ -9,6 +9,7 @@ from model import PWCNet
 from dataset import get_dataset
 from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
 from utils import show_progress
+from flow_utils import vis_flow_pyramid
 
 
 class Trainer(object):
@@ -27,11 +28,11 @@ class Trainer(object):
         train_dataset = dataset(train_or_test = 'train', **data_args)
         eval_dataset = dataset(train_or_test = 'test', **data_args)
 
-        load_args = {'batch_size': self.args.batch_size, 'shuffle':True,
+        load_args = {'batch_size': self.args.batch_size,
                      'num_workers':self.args.num_workers, 'pin_memory':True}
         self.num_batches = int(len(train_dataset.samples)/self.args.batch_size)
-        self.train_loader = data.DataLoader(train_dataset, **load_args)
-        self.eval_loader = data.DataLoader(eval_dataset, **load_args)
+        self.train_loader = data.DataLoader(train_dataset, shuffle = True, **load_args)
+        self.eval_loader = data.DataLoader(eval_dataset, shuffle = False, **load_args)
         
     def _build_graph(self):
         self.images = tf.placeholder(tf.float32, shape = [None, 2]+args.image_size+[3],
@@ -39,7 +40,8 @@ class Trainer(object):
         self.flows_gt = tf.placeholder(tf.float64, shape = [None]+args.image_size+[2],
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
-                            self.args.output_level, self.args.batch_norm)
+                            self.args.output_level, self.args.batch_norm,
+                            self.args.context)
         self.finalflow, self.flows_pyramid, self.summaries \
             = self.model(self.images[:,0], self.images[:,1])
         
@@ -48,7 +50,7 @@ class Trainer(object):
         weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
         self.loss_reg = self.loss + self.args.gamma*weights_l2
         
-        self.optimizer = tf.train.AdamOptimizer()\
+        self.optimizer = tf.train.AdamOptimizer(learning_rate = self.args.lr)\
                          .minimize(self.loss_reg, var_list = self.model.vars)
         self.saver = tf.train.Saver()
 
@@ -77,13 +79,23 @@ class Trainer(object):
                 images_eval = images_eval.numpy()/255.0
                 flows_gt_eval = flows_gt_eval.numpy()
 
-                loss_eval, epe_eval \
-                    = self.sess.run([self.loss_reg, self.epe],
+                flows_pyramid, loss_eval, epe_eval \
+                    = self.sess.run([self.flows_pyramid, self.loss_reg, self.epe],
                                     feed_dict = {self.images: images_eval,
                                                  self.flows_gt: flows_gt_eval})
                 loss_evals.append(loss_eval)
                 epe_evals.append(epe_eval)
             print(f'\r{e+1} epoch evaluation, loss: {np.mean(loss_evals)}, epe: {np.mean(epe_evals)}')
+            
+            # visualize estimated optical flow
+            if self.args.visualize:
+                if not os.path.exists('./figure'):
+                    os.mkdir('./figure')
+                flow_pyramid = [f_py[0] for f_py in flows_pyramid]
+                flow_gt = flows_gt_eval[0]
+                image = images_eval[0, 0]*255
+                vis_flow_pyramid(flow_pyramid, flow_gt, image,
+                                 f'./figure/flow_{str(e).zfill(4)}.pdf')
 
             if not os.path.exists('./model'):
                 os.mkdir('./model')
@@ -122,19 +134,25 @@ if __name__ == '__main__':
                         help = 'Search range for cost-volume calculation')
     parser.add_argument('--batch_norm', type = str, default = False,
                         help = 'Whether utilize batchnormalization [False]')
-        
+    parser.add_argument('--context', default = 'all', choices = ['all', 'final'],
+                        help = 'How insert context network [all/final]')
+
+    parser.add_argument('--lr', type = float, default = 1e-4,
+                        help = 'Learning rate [1e-4]')
     parser.add_argument('--weights', nargs = '+', type = float,
                         default = [0.32, 0.08, 0.02, 0.01, 0.005],
                         help = 'Weights for each pyramid loss')
     parser.add_argument('--gamma', type = float, default = 0.0004,
-                        help = 'Coefficient for weight decay')
-    parser.add_argument('--epsilon', type = float, default = 0.01,
-                        help = 'Small constant for robust loss')
+                        help = 'Coefficient for weight decay [4e-4]')
+    parser.add_argument('--epsilon', type = float, default = 0.02,
+                        help = 'Small constant for robust loss [0.02]')
     parser.add_argument('--q', type = float, default = 0.4,
-                        help = 'Tolerance constant for outliear flow')
+                        help = 'Tolerance constant for outliear flow [0.4]')
 
-    parser.add_argument('--resume', type = str,
-                        help = 'Learned parameter checkpoint file')
+    parser.add_argument('--visualize', action = 'store_true',
+                        help = 'Stored option for visualize and estimated flow')
+    parser.add_argument('--resume', type = str, default = None,
+                        help = 'Learned parameter checkpoint file [None]')
     
     args = parser.parse_args()
     for key, item in vars(args).items():
