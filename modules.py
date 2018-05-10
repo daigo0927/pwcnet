@@ -48,7 +48,7 @@ class WarpingLayer(object):
         # expect shape
         # x:(#batch, height, width, #channel)
         # flow:(#batch, height, width, 2)
-        with tf.variable_scope(self.name) as vs:
+        with tf.name_scope(self.name) as ns:
             grid_b, grid_y, grid_x = get_grid(x)
             flow = tf.cast(flow, tf.int32)
             warped_gy = tf.add(grid_y, flow[:,:,:,1]) # flow_y
@@ -79,10 +79,8 @@ class CostVolumeLayer(object):
         self.s_range = search_range
         self.name = name
 
-    def __call__(self, x, warped, reuse = True):
-        with tf.variable_scope(self.name) as vs:
-            if reuse:
-                vs.reuse_variables()
+    def __call__(self, x, warped):
+        with tf.name_scope(self.name) as ns:
             b, h, w, f = tf.unstack(tf.shape(x))
             cost_length = (2*self.s_range+1)**2
 
@@ -130,10 +128,8 @@ class ContextNetwork(object):
     def __init__(self, name = 'context'):
         self.name = name
 
-    def __call__(self, feature, flow, reuse = True):
+    def __call__(self, feature, flow):
         with tf.variable_scope(self.name) as vs:
-            if reuse:
-                vs.reuse_variables()
             x = tf.concat([feature, flow], axis = 3)
             x = tf.layers.Conv2D(128, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
