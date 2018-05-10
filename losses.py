@@ -1,13 +1,13 @@
 import tensorflow as tf
 import pdb 
 
-def L1loss(x, y):
-    return tf.reduce_mean(tf.norm(x-y, ord = 1, axis = 3))
+def L1loss(x, y): # shape(# batch, h, w, 2)
+    return tf.reduce_mean(tf.reduce_sum(tf.norm(x-y, ord = 1, axis = 3), axis = (1,2)))
 
-def L2loss(x, y):
-    return tf.reduce_mean(tf.norm(x-y, ord = 2, axis = 3))
+def L2loss(x, y): # shape(# batch, h, w, 2)
+    return tf.reduce_mean(tf.reduce_sum(tf.norm(x-y, ord = 2, axis = 3), axis = (1,2)))
 
-# end point error, same as L2 loss
+# end point error, each element is same as L2 loss
 def EPE(flows_gt, flows):
     return tf.reduce_mean(tf.norm(flows_gt-flows, ord = 2, axis = 3))
 
