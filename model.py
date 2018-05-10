@@ -25,7 +25,8 @@ class PWCNet(object):
     def __call__(self, images_0, images_1):
         with tf.variable_scope(self.name) as vs:
 
-            pyramid_0 = self.fp_extractor(images_0, reuse = False) + [images_0]
+            reuse = False
+            pyramid_0 = self.fp_extractor(images_0, reuse = reuse) + [images_0]
             pyramid_1 = self.fp_extractor(images_1) + [images_1]
 
             flows = []
@@ -38,10 +39,8 @@ class PWCNet(object):
                 
                 if l == 0:
                     flow = tf.zeros((b, h, w, 2), dtype = tf.int32)
-                    reuse = False
                 else:
                     flow = tf.image.resize_bilinear(flow, (h, w))*2
-                    reuse = True
 
                 # warping -> costvolume -> optical flow estimation
                 feature_1_warped = self.warp_layer(feature_1, flow)
@@ -51,18 +50,17 @@ class PWCNet(object):
                 # context considering process
                 flow = self.context(feature, flow, reuse = reuse)
 
+                flows.append(flow)
+                summaries['feature_1_warps'].append(feature_1_warped)
+                reuse = True
                 # stop processing at the defined level
                 if l == self.output_level:
                     upscale = 2**(self.num_levels - self.output_level)
-                    flow = tf.image.resize_bilinear(flow, (h*upscale, w*upscale))*upscale
-                    flows.append(flow)
-                    summaries['feature_1_warps'].append(feature_1_warped)
+                    print(f'Finally upscale flow by {upscale}.')
+                    finalflow = tf.image.resize_bilinear(flow, (h*upscale, w*upscale))*upscale
                     break
-                else:
-                    flows.append(flow)
-                    summaries['feature_1_warps'].append(feature_1_warped)
 
-            return flows, summaries
+            return finalflow, flows, summaries
 
     @property
     def vars(self):

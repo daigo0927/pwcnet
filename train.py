@@ -40,7 +40,8 @@ class Trainer(object):
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm)
-        self.flows_pyramid, self.summaries = self.model(self.images[:,0], self.images[:,1])
+        self.finalflow, self.flows_pyramid, self.summaries \
+            = self.model(self.images[:,0], self.images[:,1])
         
         self.loss, self.epe, self.loss_levels, self.epe_levels \
             = multiscale_loss(self.flows_gt, self.flows_pyramid, self.args.weights)
