@@ -44,9 +44,14 @@ class Trainer(object):
                             self.args.context)
         self.finalflow, self.flows_pyramid, self.summaries \
             = self.model(self.images[:,0], self.images[:,1])
-        
+
+        if self.args.loss is 'mutiscale':
+            self.criterion = mutiscale_loss
+        else:
+            self.criterion = multirobust_loss
+            
         self.loss, self.epe, self.loss_levels, self.epe_levels \
-            = multiscale_loss(self.flows_gt, self.flows_pyramid, self.args.weights)
+            = self.criterion(self.flows_gt, self.flows_pyramid, self.args.weights)
         weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
         self.loss_reg = self.loss + self.args.gamma*weights_l2
         
@@ -137,6 +142,8 @@ if __name__ == '__main__':
     parser.add_argument('--context', default = 'all', choices = ['all', 'final'],
                         help = 'How insert context network [all/final]')
 
+    parser.add_argument('--loss', default = 'multiscale', choices = ['multiscale', 'robust'],
+                        help = 'Loss function choice in [multiscale/robust]')
     parser.add_argument('--lr', type = float, default = 1e-4,
                         help = 'Learning rate [1e-4]')
     parser.add_argument('--weights', nargs = '+', type = float,
