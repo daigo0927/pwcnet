@@ -45,8 +45,8 @@ class Trainer(object):
         self.finalflow, self.flows_pyramid, self.summaries \
             = self.model(self.images[:,0], self.images[:,1])
 
-        if self.args.loss is 'mutiscale':
-            self.criterion = mutiscale_loss
+        if self.args.loss is 'multiscale':
+            self.criterion = multiscale_loss
         else:
             self.criterion = multirobust_loss
             
