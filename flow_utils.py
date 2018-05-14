@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 from pylab import box
 import matplotlib.pyplot as plt
 import cv2
@@ -150,23 +152,28 @@ def vis_flow(flow):
     img = computeColor(u, v)
     return img[:,:,[2,1,0]]
    
-def vis_flow_pyramid(flow_pyramid, flow_gt, image = None, filename = './flow.png'):
+def vis_flow_pyramid(flow_pyramid, flow_gt, images = None, filename = './flow.png'):
     num_contents = len(flow_pyramid) + 1
-    fig = plt.figure(figsize = (8, 10*num_contents))
+    fig = plt.figure(figsize = (12, 15*num_contents))
     fig_id = 1
 
-
-    
-    if image is not None:
-        num_contents += 1
+    if images is not None:
+        num_contents += 2
         plt.subplot(1, num_contents, fig_id)
-        plt.imshow(image)
+        plt.imshow(images[0])
         plt.tick_params(labelbottom = False, bottom = False)
         plt.tick_params(labelleft = False, left = False)
         plt.xticks([])
         box(False)
         fig_id += 1
-        
+
+        plt.subplot(1, num_contents, num_contents)
+        plt.imshow(images[1])
+        plt.tick_params(labelbottom = False, bottom = False)
+        plt.tick_params(labelleft = False, left = False)
+        plt.xticks([])
+        box(False)
+
     for flow in flow_pyramid:
         plt.subplot(1, num_contents, fig_id)
         plt.imshow(vis_flow(flow))
