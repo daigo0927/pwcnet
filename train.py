@@ -98,8 +98,8 @@ class Trainer(object):
                     os.mkdir('./figure')
                 flow_pyramid = [f_py[0] for f_py in flows_pyramid]
                 flow_gt = flows_gt_eval[0]
-                image = images_eval[0, 0]*255
-                vis_flow_pyramid(flow_pyramid, flow_gt, image,
+                images_e = images_eval[0]
+                vis_flow_pyramid(flow_pyramid, flow_gt, images_e,
                                  f'./figure/flow_{str(e).zfill(4)}.pdf')
 
             if not os.path.exists('./model'):
