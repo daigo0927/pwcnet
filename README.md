@@ -6,10 +6,6 @@ PWC-Network with TensorFlow
 - [nameloss-Chatoyant/PWC-Net_pytorch](https://github.com/nameless-Chatoyant/PWC-Net_pytorch.git): Referenced implmentation.
 
 
-## A visualization of estimated optical flow
-
-![optical flow](https://github.com/daigo0927/PWC-Net_tf/blob/master/figure/flow_0000.pdf)
-
 **Working confirmed. I hope this helps you.**  
 Unofficial implementation of CVPR2018 paper: Deqing Sun *et al.* **"PWC-Net: CNNs for Optical Flow Using Pyramid, Warping, and Cost Volume"**. [arXiv](https://arxiv.org/abs/1709.02371)
 
