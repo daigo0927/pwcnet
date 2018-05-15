@@ -154,11 +154,13 @@ def vis_flow(flow):
    
 def vis_flow_pyramid(flow_pyramid, flow_gt, images = None, filename = './flow.png'):
     num_contents = len(flow_pyramid) + 1
-    fig = plt.figure(figsize = (12, 15*num_contents))
+
     fig_id = 1
 
     if images is not None:
         num_contents += 2
+        fig = plt.figure(figsize = (12, 15*num_contents))
+        
         plt.subplot(1, num_contents, fig_id)
         plt.imshow(images[0])
         plt.tick_params(labelbottom = False, bottom = False)
@@ -173,7 +175,9 @@ def vis_flow_pyramid(flow_pyramid, flow_gt, images = None, filename = './flow.pn
         plt.tick_params(labelleft = False, left = False)
         plt.xticks([])
         box(False)
-
+    else:
+        fig = plt.figure(figsize = (12, 15*num_contents))
+            
     for flow in flow_pyramid:
         plt.subplot(1, num_contents, fig_id)
         plt.imshow(vis_flow(flow))
