@@ -47,7 +47,7 @@ class WarpingLayer(object):
     def __call__(self, x, flow):
         # expect shape
         # x:(#batch, height, width, #channel)
-        # flow:(#batch, height, width, 2)
+vv        # flow:(#batch, height, width, 2)
         with tf.name_scope(self.name) as ns:
             grid_b, grid_y, grid_x = get_grid(x)
             flow = tf.cast(flow, tf.int32)
@@ -152,3 +152,84 @@ class ContextNetwork(object):
             x = tf.layers.Conv2D(2, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
             return x+flow
+
+        
+# Utility function for guided filter
+# really thanks for the original DeepGuidedFilter implementation (https://github.com/wuhuikai/DeepGuidedFilter)
+def _diff_x(image, r):
+    assert image.shape.ndims == 4
+    left = image[:, r:2*r+1]
+    middle = image[:, 2*r+1:] - image[:, :-2*r-1]
+    right = image[:, -1:] - image[:, -2*r-1:-r-1]
+    return tf.concat([left, middle, right], axis = 1)
+
+def _diff_y(image, r):
+    assert image.shape.ndims == 4
+    left = image[:, :, r:2*r+1]
+    middle = image[:, :, 2*r+1:] - image[:, :, :-2*r-1]
+    right = image[:, :, -1:] - image[:, :, -2*r-1:-r-1]
+    return tf.concat([left, middle, right], axis = 2)
+        
+def _box_filter(x, r):
+    assert x.shape.ndims == 4
+    return _diff_y(tf.cumsum(_diff_x(tf.cumsum(x, axis = 1), r), axis = 2), r)
+
+# I try to implement fast guided filter (https://arxiv.org/abs/1505.00996)
+class FastGuidedFilter(object):
+    def __init__(self, r, downscale = 2, eps = 1e-8, name = 'guide'):
+        self.r = r # box range
+        self.ds = downscale # downscale ratio for fast coeffcients calculation
+        self.eps = eps # small constant
+        self.name = name
+
+    def __call__(self, p, I): # p:filtering input, I:guidance image
+        _, h_p, w_p, c_p = tf.unstack(tf.shape(p))
+        _, h_i, w_i, c_i = tf.unstack(tf.shape(I))
+        assert [h_p, w_p] == [h_i, w_i], 'target image and guidance image must have same spatial dimension'
+
+        N = _box_filter(tf.ones((1, h_i, w_i, 1), dtype = I.dtype), r = self.r)
+        if self.ds == 1:
+            mean_I = _box_filter(I, self.r) / N
+            var_I = _box_filter(I*I, self.r)/N - mean_I*mean_I
+            for c in range(c_p):
+                p_c = tf.expand_dims(p[:,:,:,c], axis = 3) # shape(b, h, w, 1)
+                mean_p = _box_filter(p_c, self.r) / N # shape(b, h, w, 1)
+                cov_Ip = _box_filter(I*p_c, self.r)/N - mean_I*mean_p # shape(b, h, w, c_i)
+                
+                A_c = cov_Ip / (var_I+self.eps) # shape(b, h, w, c_i)
+                b_c = mean_p - tf.expand_dims(tf.reduce_sum(A_c*mean_I, axis = 3), axis = 3) # shape(b, h, w, 1)
+                mean_A_c = _box_filter(A_c, self.r)/N # shape(b, h, w, c_i)
+                mean_b_c = _box_filter(b_c, self.r)/N # shape(b, h, w, 1)
+
+                q_c = tf.expand_dims(tf.reduce_sum(mean_A_c*I, axis = 3), axis = 3)\
+                  + mean_b_c # shape(b, h, w, 1)
+            
+            A, b = self._get_coef(p, I)
+        else:
+            A_down, b_down = self._get_coef(tf.image.resize_images(p, (p_i/self.ds, p_i/self.ds)),
+                                            tf.image.resize_images(I, (h_i/self.ds, w_i/self.ds)))
+            A = tf.resize_bilinear(A_down, (h_i, w_i))
+            b = tf.resize_bilinear(b_down, (h_i, w_i))
+        
+
+    def _get_coef(p, I):
+
+        # advancely calculate elements depending only on 
+
+
+class GFCore(object):
+    def __init__(self, I, r, downscale, eps):
+        self.I = I
+        self.r = r
+        self.dc = downscale
+        self.eps = eps
+
+        if self.dc == 1:
+            self.mean_I = mean_I = _box_filter(I, self.r) / N
+            self.var_I = _box_filter(I*I, self.r)/N - mean_I*mean_I
+            
+
+        
+
+    @staticmethod
+    def guide(p)
