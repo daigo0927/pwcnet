@@ -16,7 +16,9 @@ class Trainer(object):
 
     def __init__(self, args):
         self.args = args
-        self.sess = tf.Session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.sess = tf.Session(config = config)
         self._build_dataloader()
         self._build_graph()
 
