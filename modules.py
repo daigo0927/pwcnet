@@ -47,7 +47,7 @@ class WarpingLayer(object):
     def __call__(self, x, flow):
         # expect shape
         # x:(#batch, height, width, #channel)
-vv        # flow:(#batch, height, width, 2)
+        # flow:(#batch, height, width, 2)
         with tf.name_scope(self.name) as ns:
             grid_b, grid_y, grid_x = get_grid(x)
             flow = tf.cast(flow, tf.int32)
@@ -176,60 +176,64 @@ def _box_filter(x, r):
 
 # I try to implement fast guided filter (https://arxiv.org/abs/1505.00996)
 class FastGuidedFilter(object):
-    def __init__(self, r, downscale = 2, eps = 1e-8, name = 'guide'):
+    def __init__(self, r, channel_p, downscale = 2,
+                 eps = 1e-8, name = 'guide'):
         self.r = r # box range
+        self.channel_p = channel_p
         self.ds = downscale # downscale ratio for fast coeffcients calculation
         self.eps = eps # small constant
         self.name = name
 
     def __call__(self, p, I): # p:filtering input, I:guidance image
-        _, h_p, w_p, c_p = tf.unstack(tf.shape(p))
-        _, h_i, w_i, c_i = tf.unstack(tf.shape(I))
-        assert [h_p, w_p] == [h_i, w_i], 'target image and guidance image must have same spatial dimension'
-
-        N = _box_filter(tf.ones((1, h_i, w_i, 1), dtype = I.dtype), r = self.r)
-        if self.ds == 1:
-            mean_I = _box_filter(I, self.r) / N
-            var_I = _box_filter(I*I, self.r)/N - mean_I*mean_I
-            for c in range(c_p):
-                p_c = tf.expand_dims(p[:,:,:,c], axis = 3) # shape(b, h, w, 1)
-                mean_p = _box_filter(p_c, self.r) / N # shape(b, h, w, 1)
-                cov_Ip = _box_filter(I*p_c, self.r)/N - mean_I*mean_p # shape(b, h, w, c_i)
-                
-                A_c = cov_Ip / (var_I+self.eps) # shape(b, h, w, c_i)
-                b_c = mean_p - tf.expand_dims(tf.reduce_sum(A_c*mean_I, axis = 3), axis = 3) # shape(b, h, w, 1)
-                mean_A_c = _box_filter(A_c, self.r)/N # shape(b, h, w, c_i)
-                mean_b_c = _box_filter(b_c, self.r)/N # shape(b, h, w, 1)
-
-                q_c = tf.expand_dims(tf.reduce_sum(mean_A_c*I, axis = 3), axis = 3)\
-                  + mean_b_c # shape(b, h, w, 1)
-            
-            A, b = self._get_coef(p, I)
-        else:
-            A_down, b_down = self._get_coef(tf.image.resize_images(p, (p_i/self.ds, p_i/self.ds)),
-                                            tf.image.resize_images(I, (h_i/self.ds, w_i/self.ds)))
-            A = tf.resize_bilinear(A_down, (h_i, w_i))
-            b = tf.resize_bilinear(b_down, (h_i, w_i))
-        
-
-    def _get_coef(p, I):
-
-        # advancely calculate elements depending only on 
+        with tf.name_scope(self.name) as ns:
+            guider = GFCore(I, self.r, self.ds, self.eps)
+            return guider.guide(p, self.channel_p)
 
 
 class GFCore(object):
     def __init__(self, I, r, downscale, eps):
         self.I = I
-        self.r = r
-        self.dc = downscale
+        self.r = int(r/downscale)
+        self.ds = downscale # downscale = 1: normal guided filter
         self.eps = eps
-
-        if self.dc == 1:
-            self.mean_I = mean_I = _box_filter(I, self.r) / N
-            self.var_I = _box_filter(I*I, self.r)/N - mean_I*mean_I
-            
-
         
+        self._init_guide()
+        
+    def _init_guide(self):
+        _, h_i, w_i, c_i = tf.unstack(tf.shape(self.I))
+        self.h_down = tf.cast(h_i/self.ds, tf.int32)
+        self.w_down = tf.cast(w_i/self.ds, tf.int32)
+        self.I_down = tf.image.resize_images(self.I, (self.h_down, self.w_down))
+        
+        self.N = _box_filter(tf.ones((1, self.h_down, self.w_down, 1),
+                                     dtype = self.I.dtype), r = self.r)
+        self.mean_I = _box_filter(self.I_down, self.r) / self.N
+        self.var_I = _box_filter(self.I_down*self.I_down, self.r) / self.N
 
-    @staticmethod
-    def guide(p)
+    def guide(self, p, channel_p):
+        _, h_p, w_p, c_p = tf.unstack(tf.shape(p))
+        tf.assert_equal(c_p, channel_p)
+        tf.assert_equal(tf.cast([h_p/self.ds, w_p/self.ds], tf.int32),
+                        [self.h_down, self.w_down])
+        p_down = tf.image.resize_images(p, (self.h_down, self.w_down))
+        
+        q = [0]*channel_p
+        for c in range(channel_p):
+            p_c = tf.expand_dims(p_down[:,:,:,c], axis = 3)
+            mean_p = _box_filter(p_c, self.r) / self.N
+            cov_Ip = _box_filter(self.I_down*p_c, self.r) / self.N - self.mean_I*mean_p
+            
+            A_c = cov_Ip / (self.var_I+self.eps)
+            b_c = mean_p - tf.expand_dims(tf.reduce_sum(A_c*self.mean_I, axis = 3),
+                                          axis = 3)
+
+            mean_A_c = _box_filter(A_c, self.r) / self.N
+            mean_A_c = tf.image.resize_images(mean_A_c, (h_p, w_p))
+            mean_b_c = _box_filter(b_c, self.r) / self.N
+            mean_b_c = tf.image.resize_images(mean_b_c, (h_p, w_p))
+
+            q_c = tf.expand_dims(tf.reduce_sum(mean_A_c*self.I, axis = 3), axis = 3)\
+                  + mean_b_c
+            q[c] = q_c
+
+        return tf.concat(q, axis = 3)
