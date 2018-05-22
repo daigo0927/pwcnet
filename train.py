@@ -41,7 +41,7 @@ class Trainer(object):
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm,
-                            self.args.context)
+                            self.args.context, self.args.guide, self.args.r_guide)
         self.finalflow, self.flows_pyramid, self.summaries \
             = self.model(self.images[:,0], self.images[:,1])
 
@@ -141,6 +141,10 @@ if __name__ == '__main__':
                         help = 'Whether utilize batchnormalization [False]')
     parser.add_argument('--context', default = 'all', choices = ['all', 'final'],
                         help = 'How insert context network [all/final]')
+    parser.add_argument('--guide', action = 'store_true',
+                        help = 'Stored option for guided filter')
+    parser.add_argument('--r_guide', type = int, default = 3,
+                        help = 'Radius for guided filter [3]')
 
     parser.add_argument('--loss', default = 'multiscale', choices = ['multiscale', 'robust'],
                         help = 'Loss function choice in [multiscale/robust]')

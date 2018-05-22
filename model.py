@@ -7,12 +7,15 @@ class PWCNet(object):
 
     def __init__(self, num_levels = 6, search_range = 4,
                  output_level = 4, batch_norm = False,
-                 context = 'all', name = 'pwcnet'):
+                 context = 'all', guide = False, r_guide = 3, 
+                 name = 'pwcnet'):
         self.num_levels = num_levels
         self.s_range = search_range
         self.output_level = output_level
         self.batch_norm = batch_norm
         self.context = context
+        self.guide = guide
+        self.r_guide = r_guide
         self.name = name
 
         self.fp_extractor = FeaturePyramidExtractor(self.num_levels, batch_norm)
@@ -28,6 +31,9 @@ class PWCNet(object):
                                  for l in range(self.num_levels)]
         else:
             self.context_net = ContextNetwork(name = 'context')
+
+        if self.guide:
+            self.guided_filter = FastGuidedFilter(r = self.r_guide, channel_p = 2)
 
     def __call__(self, images_0, images_1):
         with tf.variable_scope(self.name) as vs:
@@ -47,6 +53,9 @@ class PWCNet(object):
                     flow = tf.zeros((b, h, w, 2), dtype = tf.int32)
                 else:
                     flow = tf.image.resize_bilinear(flow, (h, w))*2
+                    
+                    if self.guide:
+                        flow = self.guided_filter(flow, feature_0)
 
                 # warping -> costvolume -> optical flow estimation
                 feature_1_warped = self.warp_layer(feature_1, flow)
@@ -67,6 +76,8 @@ class PWCNet(object):
                     upscale = 2**(self.num_levels - self.output_level)
                     print(f'Finally upscale flow by {upscale}.')
                     finalflow = tf.image.resize_bilinear(flow, (h*upscale, w*upscale))*upscale
+                    if self.guide:
+                        finalflow = self.guided_filter(finalflow, images_0)
                     break
 
             return finalflow, flows, summaries
