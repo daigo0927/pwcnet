@@ -44,7 +44,7 @@ class Trainer(object):
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm,
                             self.args.context, self.args.guide, self.args.r_guide)
-        self.finalflow, self.flows_pyramid, self.summaries \
+        self.finalflow, self.flows_pyramid, self.pyramid \
             = self.model(self.images[:,0], self.images[:,1])
 
         if self.args.loss is 'multiscale':
@@ -56,8 +56,17 @@ class Trainer(object):
             = self.criterion(self.flows_gt, self.flows_pyramid, self.args.weights)
         weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
         self.loss_reg = self.loss + self.args.gamma*weights_l2
-        
-        self.optimizer = tf.train.AdamOptimizer(learning_rate = self.args.lr)\
+
+        self.epe_final = EPE(self.flows_gt, self.finalflow)
+
+        if self.args.lr_scheduling:
+            self.global_step = tf.Variable(0, trainable = False)
+            boundaries = [2e+5, 4e+5, 6e+5, 8e+5, 1e+6]
+            values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
+            lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
+        else:
+            lr = self.args.lr
+        self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
                          .minimize(self.loss_reg, var_list = self.model.vars)
         self.saver = tf.train.Saver()
 
@@ -73,13 +82,17 @@ class Trainer(object):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
 
-                _, loss_reg, epe \
-                    = self.sess.run([self.optimizer, self.loss_reg, self.epe],
+                _, loss_reg, epe_final \
+                    = self.sess.run([self.optimizer, self.loss_reg, self.epe_final],
                                     feed_dict = {self.images: images,
                                                  self.flows_gt: flows_gt})
 
+                self.global_step += 1
+                if self.global_step.eval(self.sess)%5000:
+                    print(f'global step : {self.global_step.eval(sess)}')
+                    
                 if i%10 == 0:
-                    show_progress(e+1, i+1, self.num_batches, loss_reg, epe)
+                    show_progress(e+1, i+1, self.num_batches, loss_reg, epe_final)
 
             loss_evals, epe_evals = [], []
             for images_eval, flows_gt_eval in self.eval_loader:
@@ -87,7 +100,7 @@ class Trainer(object):
                 flows_gt_eval = flows_gt_eval.numpy()
 
                 flows_pyramid, loss_eval, epe_eval \
-                    = self.sess.run([self.flows_pyramid, self.loss_reg, self.epe],
+                    = self.sess.run([self.flows_pyramid, self.loss_reg, self.epe_final],
                                     feed_dict = {self.images: images_eval,
                                                  self.flows_gt: flows_gt_eval})
                 loss_evals.append(loss_eval)
@@ -117,7 +130,7 @@ if __name__ == '__main__':
                         help = 'Directory containing target dataset')
     parser.add_argument('--n_epoch', type = int, default = 100,
                         help = '# of epochs [100]')
-    parser.add_argument('--batch_size', type = int, default = 4,
+    parser.add_argument('--batch_size', type = int, default = 8,
                         help = 'Batch size [4]')
     parser.add_argument('--num_workers', type = int, default = 8,
                         help = '# of workers for data loading [8]')
@@ -152,6 +165,8 @@ if __name__ == '__main__':
                         help = 'Loss function choice in [multiscale/robust]')
     parser.add_argument('--lr', type = float, default = 1e-4,
                         help = 'Learning rate [1e-4]')
+    parser.add_argument('--lr_scheduling', action = 'store_true',
+                        help = 'Learning rate scheduling option by piecewise constant')
     parser.add_argument('--weights', nargs = '+', type = float,
                         default = [0.32, 0.08, 0.02, 0.01, 0.005],
                         help = 'Weights for each pyramid loss')

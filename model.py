@@ -42,7 +42,6 @@ class PWCNet(object):
             pyramid_1 = self.fp_extractor(images_1) + [images_1]
 
             flows = []
-            summaries = {'feature_1_warps':[]}
 
             # coarse to fine processing
             for l, (feature_0, feature_1) in enumerate(zip(pyramid_0, pyramid_1)):
@@ -53,9 +52,6 @@ class PWCNet(object):
                     flow = tf.zeros((b, h, w, 2), dtype = tf.int32)
                 else:
                     flow = tf.image.resize_bilinear(flow, (h, w))*2
-                    
-                    if self.guide:
-                        flow = self.guided_filter(flow, feature_0)
 
                 # warping -> costvolume -> optical flow estimation
                 feature_1_warped = self.warp_layer(feature_1, flow)
@@ -69,7 +65,6 @@ class PWCNet(object):
                     flow = self.context_net(feature, flow)
 
                 flows.append(flow)
-                summaries['feature_1_warps'].append(feature_1_warped)
                 
                 # stop processing at the defined level
                 if l == self.output_level:
@@ -80,7 +75,7 @@ class PWCNet(object):
                         finalflow = self.guided_filter(finalflow, images_0)
                     break
 
-            return finalflow, flows, summaries
+            return finalflow, flows, pyramid_0
 
     @property
     def vars(self):
