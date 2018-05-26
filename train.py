@@ -5,11 +5,11 @@ import numpy as np
 import torch
 from torch.utils import data
 
-from model import PWCNet
-from dataset import get_dataset
-from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
-from utils import show_progress
-from flow_utils import vis_flow_pyramid
+from .model import PWCNet
+from .dataset import get_dataset
+from .losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
+from .utils import show_progress
+from .flow_utils import vis_flow_pyramid
 
 
 class Trainer(object):

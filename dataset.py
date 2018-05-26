@@ -7,7 +7,7 @@ import torch
 import random
 import cv2
 from functools import partial
-from flow_utils import load_flow
+from .flow_utils import load_flow
 from abc import abstractmethod, ABCMeta
 
 
