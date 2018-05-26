@@ -5,11 +5,11 @@ import numpy as np
 import torch
 from torch.utils import data
 
-from .model import PWCNet
-from .dataset import get_dataset
-from .losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
-from .utils import show_progress
-from .flow_utils import vis_flow_pyramid
+from model import PWCNet
+from dataset import get_dataset
+from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
+from utils import show_progress
+from flow_utils import vis_flow_pyramid
 
 
 class Trainer(object):
@@ -87,9 +87,10 @@ class Trainer(object):
                                     feed_dict = {self.images: images,
                                                  self.flows_gt: flows_gt})
 
-                if self.sess.run(self.global_step)%5000 == 0:
-                    print(f'\n global step : {self.sess.run(self.global_step)}')
-                self.sess.run(self.global_step.assign_add(1))
+                if self.args.lr_scheduling:
+                    if self.sess.run(self.global_step)%5000 == 0:
+                        print(f'\n global step : {self.sess.run(self.global_step)}')
+                    self.sess.run(self.global_step.assign_add(1))
                     
                 if i%10 == 0:
                     show_progress(e+1, i+1, self.num_batches, loss_reg, epe_final)
@@ -130,8 +131,8 @@ if __name__ == '__main__':
                         help = 'Directory containing target dataset')
     parser.add_argument('--n_epoch', type = int, default = 100,
                         help = '# of epochs [100]')
-    parser.add_argument('--batch_size', type = int, default = 8,
-                        help = 'Batch size [8]')
+    parser.add_argument('--batch_size', type = int, default = 4,
+                        help = 'Batch size [4]')
     parser.add_argument('--num_workers', type = int, default = 8,
                         help = '# of workers for data loading [8]')
 
