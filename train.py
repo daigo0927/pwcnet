@@ -82,17 +82,18 @@ class Trainer(object):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
 
-                _, loss_reg, epe_final \
-                    = self.sess.run([self.optimizer, self.loss_reg, self.epe_final],
-                                    feed_dict = {self.images: images,
-                                                 self.flows_gt: flows_gt})
+                self.sess.run(self.optimizer,
+                              feed_dict = {self.images: images, self.flows_gt: flows_gt})
 
                 if self.args.lr_scheduling:
                     if self.sess.run(self.global_step)%5000 == 0:
                         print(f'\n global step : {self.sess.run(self.global_step)}')
                     self.sess.run(self.global_step.assign_add(1))
                     
-                if i%10 == 0:
+                if i%20 == 0:
+                    loss_reg, epe_final = self.sess.run([self.loss_reg, self.epe_final],
+                                                        feed_dict = {self.images: images,
+                                                                     self.flows_gt: flows_gt})
                     show_progress(e+1, i+1, self.num_batches, loss_reg, epe_final)
 
             loss_evals, epe_evals = [], []
