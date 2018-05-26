@@ -39,7 +39,7 @@ class Trainer(object):
     def _build_graph(self):
         self.images = tf.placeholder(tf.float32, shape = [None, 2]+args.image_size+[3],
                                      name = 'images')
-        self.flows_gt = tf.placeholder(tf.float64, shape = [None]+args.image_size+[2],
+        self.flows_gt = tf.placeholder(tf.float32, shape = [None]+args.image_size+[2],
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm,
@@ -61,7 +61,7 @@ class Trainer(object):
 
         if self.args.lr_scheduling:
             self.global_step = tf.Variable(0, trainable = False)
-            boundaries = [2e+5, 4e+5, 6e+5, 8e+5, 1e+6]
+            boundaries = [200000, 400000, 600000, 800000, 1000000]
             values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
             lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
         else:
@@ -87,9 +87,9 @@ class Trainer(object):
                                     feed_dict = {self.images: images,
                                                  self.flows_gt: flows_gt})
 
-                self.global_step += 1
-                if self.global_step.eval(self.sess)%5000:
-                    print(f'global step : {self.global_step.eval(sess)}')
+                if self.sess.run(self.global_step)%5000 == 0:
+                    print(f'\n global step : {self.sess.run(self.global_step)}')
+                self.sess.run(self.global_step.assign_add(1))
                     
                 if i%10 == 0:
                     show_progress(e+1, i+1, self.num_batches, loss_reg, epe_final)
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_epoch', type = int, default = 100,
                         help = '# of epochs [100]')
     parser.add_argument('--batch_size', type = int, default = 8,
-                        help = 'Batch size [4]')
+                        help = 'Batch size [8]')
     parser.add_argument('--num_workers', type = int, default = 8,
                         help = '# of workers for data loading [8]')
 
