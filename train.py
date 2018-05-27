@@ -1,5 +1,6 @@
 import os
 import argparse
+import time
 import tensorflow as tf
 import numpy as np
 import torch
@@ -61,11 +62,13 @@ class Trainer(object):
 
         if self.args.lr_scheduling:
             self.global_step = tf.Variable(0, trainable = False)
+            self.global_step_update = self.global_step.assign_add(1)
             boundaries = [200000, 400000, 600000, 800000, 1000000]
             values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
             lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
         else:
             lr = self.args.lr
+
         self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
                          .minimize(self.loss_reg, var_list = self.model.vars)
         self.saver = tf.train.Saver()
@@ -82,18 +85,12 @@ class Trainer(object):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
 
-                self.sess.run(self.optimizer,
-                              feed_dict = {self.images: images, self.flows_gt: flows_gt})
+                _, _, loss_reg, epe_final = \
+                  self.sess.run([self.optimizer, self.global_step_update,
+                                 self.loss_reg, self.epe_final],
+                                feed_dict = {self.images: images, self.flows_gt: flows_gt})
 
-                if self.args.lr_scheduling:
-                    if self.sess.run(self.global_step)%5000 == 0:
-                        print(f'\n global step : {self.sess.run(self.global_step)}')
-                    self.sess.run(self.global_step.assign_add(1))
-                    
                 if i%20 == 0:
-                    loss_reg, epe_final = self.sess.run([self.loss_reg, self.epe_final],
-                                                        feed_dict = {self.images: images,
-                                                                     self.flows_gt: flows_gt})
                     show_progress(e+1, i+1, self.num_batches, loss_reg, epe_final)
 
             loss_evals, epe_evals = [], []
@@ -107,7 +104,9 @@ class Trainer(object):
                                                  self.flows_gt: flows_gt_eval})
                 loss_evals.append(loss_eval)
                 epe_evals.append(epe_eval)
-            print(f'\r{e+1} epoch evaluation, loss: {np.mean(loss_evals)}, epe: {np.mean(epe_evals)}')
+                
+            g_step = self.sess.run(self.global_step)
+            print(f'\r{e+1} epoch evaluation, loss: {np.mean(loss_evals)}, epe: {np.mean(epe_evals)}, global step: {g_step}.')
             
             # visualize estimated optical flow
             if self.args.visualize:
@@ -117,11 +116,11 @@ class Trainer(object):
                 flow_gt = flows_gt_eval[0]
                 images_e = images_eval[0]
                 vis_flow_pyramid(flow_pyramid, flow_gt, images_e,
-                                 f'./figure/flow_{str(e).zfill(4)}.pdf')
+                                 f'./figure/flow_{str(e+1).zfill(4)}.pdf')
 
             if not os.path.exists('./model'):
                 os.mkdir('./model')
-            self.saver.save(self.sess, f'./model/model_{e}.ckpt')
+            self.saver.save(self.sess, f'./model/model_{e+1}.ckpt')
         
 
 if __name__ == '__main__':
