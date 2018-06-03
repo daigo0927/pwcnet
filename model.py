@@ -49,7 +49,7 @@ class PWCNet(object):
                 b, h, w, _ = tf.unstack(tf.shape(feature_0))
                 
                 if l == 0:
-                    flow = tf.zeros((b, h, w, 2), dtype = tf.int32)
+                    flow = tf.zeros((b, h, w, 2), dtype = tf.float32)
                 else:
                     flow = tf.image.resize_bilinear(flow, (h, w))*2
 
