@@ -1,5 +1,7 @@
 import os
 import re
+import time
+from tqdm import tqdm
 import argparse
 import numpy as np
 import tensorflow as tf
@@ -36,7 +38,15 @@ class Tester(object):
             self.sess.run(tf.global_variables_initializer())
 
     def test(self):
-        flow_pyramid = self.sess.run(self.flow_pyramid)
+        if self.args.time:
+            time_s = time.time()
+            for _ in tqdm(range(1000)):
+                flow_pyramid = self.sess.run(self.flow_pyramid)
+            time_iter = (time.time()-time_s)/1000
+            print(f'Inference time: {time_iter} sec (averaged over 1000 iterations)')
+        else:
+            flow_pyramid = self.sess.run(self.flow_pyramid)
+            
         flow_pyramid = [fpy[0] for fpy in flow_pyramid]
         if not os.path.exists('./test_figure'):
             os.mkdir('./test_figure')
@@ -50,6 +60,8 @@ if __name__ == '__main__':
                         help = 'Target images (required)')
     parser.add_argument('--resume', type =  str, default = None,
                         help = 'Learned parameter checkpoint file [None]')
+    parser.add_argument('--time', '-t', action = 'store_true',
+                        help = 'Stored option for inference speed measurement')
     args = parser.parse_args()
     for key, item in vars(args).items():
         print(f'{key} : {item}')

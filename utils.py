@@ -9,6 +9,9 @@ def get_grid(x):
     # return tf.stack([Bg, Yg, Xg], axis = 3)
     return Bg, Yg, Xg # return collectively for elementwise processing
 
-def show_progress(epoch, batch, batch_total, loss, epe):
-    sys.stdout.write(f'\r{epoch} epoch: [{batch}/{batch_total}, loss: {loss}, epe: {epe}]')
+def show_progress(epoch, batch, batch_total, **kwargs):
+    message = f'\r{epoch} epoch: [{batch}/{batch_total}'
+    for key, item in kwargs.items():
+        message += f', {key}: {item}'
+    sys.stdout.write(message+']')
     sys.stdout.flush()

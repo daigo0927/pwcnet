@@ -44,7 +44,7 @@ class Trainer(object):
                                        name = 'flows')
         self.model = PWCNet(self.args.num_levels, self.args.search_range,
                             self.args.output_level, self.args.batch_norm,
-                            self.args.context, self.args.guide, self.args.r_guide)
+                            self.args.context)
         self.finalflow, self.flows_pyramid, self.pyramid \
             = self.model(self.images[:,0], self.images[:,1])
 
@@ -67,6 +67,8 @@ class Trainer(object):
             values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
             lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
         else:
+            self.global_step = tf.constant(0)
+            self.global_step_update = tf.constant(0)
             lr = self.args.lr
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
@@ -80,18 +82,22 @@ class Trainer(object):
             self.sess.run(tf.global_variables_initializer())
             
     def train(self):
+        train_start = time.time()
         for e in range(self.args.n_epoch):
             for i, (images, flows_gt) in enumerate(self.train_loader):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
-
+                
+                time_s = time.time()
                 _, _, loss_reg, epe_final = \
                   self.sess.run([self.optimizer, self.global_step_update,
                                  self.loss_reg, self.epe_final],
                                 feed_dict = {self.images: images, self.flows_gt: flows_gt})
 
                 if i%20 == 0:
-                    show_progress(e+1, i+1, self.num_batches, loss_reg, epe_final)
+                    batch_time = time.time() - time_s
+                    kwargs = {'loss':loss_reg, 'epe':epe_final, 'batch time':batch_time}
+                    show_progress(e+1, i+1, self.num_batches, **kwargs)
 
             loss_evals, epe_evals = [], []
             for images_eval, flows_gt_eval in self.eval_loader:
@@ -106,7 +112,8 @@ class Trainer(object):
                 epe_evals.append(epe_eval)
                 
             g_step = self.sess.run(self.global_step)
-            print(f'\r{e+1} epoch evaluation, loss: {np.mean(loss_evals)}, epe: {np.mean(epe_evals)}, global step: {g_step}.')
+            print(f'\r{e+1} epoch evaluation, loss: {np.mean(loss_evals)}, epe: {np.mean(epe_evals)}'\
+                  +f', global step: {g_step}, elapsed time: {time.time()-train_start} sec.')
             
             # visualize estimated optical flow
             if self.args.visualize:
@@ -150,17 +157,13 @@ if __name__ == '__main__':
     parser.add_argument('--num_levels', type = int, default = 6,
                         help = '# of levels for feature extraction [6]')
     parser.add_argument('--output_level', type = int, default = 4,
-                        help = 'Final output level for estimated flow')
+                        help = 'Final output level for estimated flow [4]')
     parser.add_argument('--search_range', type = int, default = 4,
-                        help = 'Search range for cost-volume calculation')
+                        help = 'Search range for cost-volume calculation [4]')
     parser.add_argument('--batch_norm', type = str, default = False,
                         help = 'Whether utilize batchnormalization [False]')
     parser.add_argument('--context', default = 'all', choices = ['all', 'final'],
                         help = 'How insert context network [all/final]')
-    parser.add_argument('--guide', action = 'store_true',
-                        help = 'Stored option for guided filter')
-    parser.add_argument('--r_guide', type = int, default = 3,
-                        help = 'Radius for guided filter [3]')
 
     parser.add_argument('--loss', default = 'multiscale', choices = ['multiscale', 'robust'],
                         help = 'Loss function choice in [multiscale/robust]')
