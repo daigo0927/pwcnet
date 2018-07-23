@@ -6,8 +6,9 @@ input image0, estimated flow at each 5 scale, ground truth flow, input image1
 
 
 # Acknowledgments
+- [NVlabs/PWC-Net](https://github.com/NVlabs/PWC-Net): original implementation (by Caffe / PyTorch).
 - [NVIDIA/flownet2-pytorch](https://github.com/NVIDIA/flownet2-pytorch): framework, data transformers, loss functions, and many details about flow estimation.
-- [nameloss-Chatoyant/PWC-Net_pytorch](https://github.com/nameless-Chatoyant/PWC-Net_pytorch.git): Referenced implmentation.
+- [nameloss-Chatoyant/PWC-Net_pytorch](https://github.com/nameless-Chatoyant/PWC-Net_pytorch.git): Referenced implementation.
 
 
 **Working confirmed. I hope this helps you.**  
@@ -36,3 +37,8 @@ python train.py --dataset SintelClean --dataset_dir path/to/MPI-Sintel-complete 
 
 After running above script, utilize GPU-id is asked, (-1:CPU). You can use other learning configs (like `--n_epoch` or `--batch_size`) see all arguments in `train.py`, regards.
 
+## Testing (infer optical flow) by paired images
+
+```
+python test.py --input_images path/to/image_0 path/to/image_1 --resume path/to/model.ckpt
+```
