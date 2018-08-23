@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from modules import *
+from .modules import *
 
 
 class PWCNet(object):
