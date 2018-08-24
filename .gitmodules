@@ -1,0 +1,3 @@
+[submodule "datahandler"]
+	path = datahandler
+	url = https://github.com/daigo0927/DataUtils.git
