@@ -16,7 +16,6 @@ def _conv_block(filters, kernel_size = (3, 3), strides = (1, 1), batch_norm = Fa
 
 
 class FeaturePyramidExtractor(object):
-
     def __init__(self, num_levels = 6, batch_norm = False, name = 'fp_extractor'):
         self.num_levels = num_levels
         self.filters_list = [16, 32, 64, 96, 128, 192]
@@ -44,10 +43,11 @@ def nearest_warp(x, flow):
     grid_b, grid_y, grid_x = get_grid(x)
     flow = tf.cast(flow, tf.int32)
 
-    _, h, w, _ = tf.unstack(tf.shape(x))
     warped_gy = tf.add(grid_y, flow[:,:,:,1]) # flow_y
-    warped_gy = tf.clip_by_value(warped_gy, 0, h-1)
     warped_gx = tf.add(grid_x, flow[:,:,:,0]) # flow_x
+    # clip value by height/width limitation
+    _, h, w, _ = tf.unstack(tf.shape(x))
+    warped_gy = tf.clip_by_value(warped_gy, 0, h-1)
     warped_gx = tf.clip_by_value(warped_gx, 0, w-1)
             
     warped_indices = tf.stack([grid_b, warped_gy, warped_gx], axis = 3)
