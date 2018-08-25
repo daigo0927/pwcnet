@@ -7,14 +7,14 @@ import torch
 from torch.utils import data
 
 from model import PWCNet
-from dataset import get_dataset
+from datahandler.utils import get_dataset
+# from dataset import get_dataset
 from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
 from utils import show_progress
 from flow_utils import vis_flow_pyramid
 
 
 class Trainer(object):
-
     def __init__(self, args):
         self.args = args
         config = tf.ConfigProto()
@@ -26,16 +26,18 @@ class Trainer(object):
     def _build_dataloader(self):
         dataset = get_dataset(self.args.dataset)
         data_args = {'dataset_dir':self.args.dataset_dir, 'cropper':self.args.crop_type,
-                    'crop_shape':self.args.crop_shape, 'resize_shape':self.args.resize_shape,
-                    'resize_scale':self.args.resize_scale}
-        train_dataset = dataset(train_or_test = 'train', **data_args)
-        eval_dataset = dataset(train_or_test = 'test', **data_args)
+                     'crop_shape':self.args.crop_shape, 'resize_shape':self.args.resize_shape,
+                     'resize_scale':self.args.resize_scale}
+        # train_dataset = dataset(train_or_test = 'train', **data_args)
+        # val_dataset = dataset(train_or_test = 'test', **data_args)
+        train_dataset = dataset(train_or_val = 'train', **data_args)
+        val_dataset = dataset(train_or_val = 'val', **data_args)
 
         load_args = {'batch_size': self.args.batch_size,
                      'num_workers':self.args.num_workers, 'pin_memory':True}
         self.num_batches = int(len(train_dataset.samples)/self.args.batch_size)
         self.train_loader = data.DataLoader(train_dataset, shuffle = True, **load_args)
-        self.eval_loader = data.DataLoader(eval_dataset, shuffle = False, **load_args)
+        self.val_loader = data.DataLoader(val_dataset, shuffle = False, **load_args)
         
     def _build_graph(self):
         self.images = tf.placeholder(tf.float32, shape = [None, 2]+args.image_size+[3],
@@ -83,7 +85,7 @@ class Trainer(object):
             
     def train(self):
         train_start = time.time()
-        for e in range(self.args.n_epoch):
+        for e in range(self.args.n_epochs):
             for i, (images, flows_gt) in enumerate(self.train_loader):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
@@ -99,20 +101,20 @@ class Trainer(object):
                     kwargs = {'loss':loss_reg, 'epe':epe_final, 'batch time':batch_time}
                     show_progress(e+1, i+1, self.num_batches, **kwargs)
 
-            loss_evals, epe_evals = [], []
-            for images_eval, flows_gt_eval in self.eval_loader:
-                images_eval = images_eval.numpy()/255.0
-                flows_gt_eval = flows_gt_eval.numpy()
+            loss_vals, epe_vals = [], []
+            for images_val, flows_gt_val in self.val_loader:
+                images_val = images_val.numpy()/255.0
+                flows_gt_val = flows_gt_val.numpy()
 
-                flows_pyramid, loss_eval, epe_eval \
+                flows_pyramid, loss_val, epe_val \
                     = self.sess.run([self.flows_pyramid, self.loss_reg, self.epe_final],
-                                    feed_dict = {self.images: images_eval,
-                                                 self.flows_gt: flows_gt_eval})
-                loss_evals.append(loss_eval)
-                epe_evals.append(epe_eval)
+                                    feed_dict = {self.images: images_val,
+                                                 self.flows_gt: flows_gt_val})
+                loss_vals.append(loss_val)
+                epe_vals.append(epe_val)
                 
             g_step = self.sess.run(self.global_step)
-            print(f'\r{e+1} epoch evaluation, loss: {np.mean(loss_evals)}, epe: {np.mean(epe_evals)}'\
+            print(f'\r{e+1} epoch validation, loss: {np.mean(loss_vals)}, epe: {np.mean(epe_vals)}'\
                   +f', global step: {g_step}, elapsed time: {time.time()-train_start} sec.')
             
             # visualize estimated optical flow
@@ -120,9 +122,9 @@ class Trainer(object):
                 if not os.path.exists('./figure'):
                     os.mkdir('./figure')
                 flow_pyramid = [f_py[0] for f_py in flows_pyramid]
-                flow_gt = flows_gt_eval[0]
-                images_e = images_eval[0]
-                vis_flow_pyramid(flow_pyramid, flow_gt, images_e,
+                flow_gt = flows_gt_val[0]
+                images_v = images_val[0]
+                vis_flow_pyramid(flow_pyramid, flow_gt, images_v,
                                  f'./figure/flow_{str(e+1).zfill(4)}.pdf')
 
             if not os.path.exists('./model'):
@@ -136,7 +138,7 @@ if __name__ == '__main__':
                         help = 'Target dataset, [SintelClean]')
     parser.add_argument('--dataset_dir', type = str, required = True,
                         help = 'Directory containing target dataset')
-    parser.add_argument('--n_epoch', type = int, default = 100,
+    parser.add_argument('--n_epochs', type = int, default = 100,
                         help = '# of epochs [100]')
     parser.add_argument('--batch_size', type = int, default = 4,
                         help = 'Batch size [4]')
@@ -169,8 +171,11 @@ if __name__ == '__main__':
                         help = 'Loss function choice in [multiscale/robust]')
     parser.add_argument('--lr', type = float, default = 1e-4,
                         help = 'Learning rate [1e-4]')
-    parser.add_argument('--lr_scheduling', action = 'store_true',
-                        help = 'Learning rate scheduling option by piecewise constant')
+    parser.add_argument('--lr_scheduling', dest = 'lr_scheduling', action = 'store_true',
+                        help = 'Enable learning rate scheduling, [enabled] as default')
+    parser.add_argument('--no-lr_scheduling', dest = 'lr_scheduling', action = 'store_false',
+                        help = 'Disable learning rate scheduling, [enabled] as default')
+    parser.set_defaults(lr_scheduling = True)
     parser.add_argument('--weights', nargs = '+', type = float,
                         default = [0.32, 0.08, 0.02, 0.01, 0.005],
                         help = 'Weights for each pyramid loss')
@@ -181,8 +186,11 @@ if __name__ == '__main__':
     parser.add_argument('--q', type = float, default = 0.4,
                         help = 'Tolerance constant for outliear flow [0.4]')
 
-    parser.add_argument('--visualize', action = 'store_true',
-                        help = 'Stored option for visualize and estimated flow')
+    parser.add_argument('-v', '--visualize', dest = 'visualize', action = 'store_true',
+                        help = 'Enable estimated flow visualization, [enabled] as default')
+    parser.add_argument('--no-visualize', dest = 'visualize', action = 'store_false',
+                        help = 'Disable estimated flow visualization, [enabled] as default')
+    parser.set_defaults(visualize = True)
     parser.add_argument('--resume', type = str, default = None,
                         help = 'Learned parameter checkpoint file [None]')
     
