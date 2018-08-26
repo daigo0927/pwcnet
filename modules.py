@@ -1,25 +1,15 @@
+import numpy as np
 import tensorflow as tf
 from functools import partial
 
 from utils import get_grid
 
 
-def _conv_block(filters, kernel_size = (3, 3), strides = (1, 1), batch_norm = False):
-    def f(x):
-        x = tf.layers.Conv2D(filters, kernel_size,
-                             strides, 'same')(x)
-        if batch_norm:
-            x = tf.layers.BatchNormalization()(x)
-        x = tf.nn.leaky_relu(x, 0.2)
-        return x
-    return f
-
-
+# Feature pyramid extractor module simple/original -----------------------
 class FeaturePyramidExtractor(object):
-    def __init__(self, num_levels = 6, batch_norm = False, name = 'fp_extractor'):
+    def __init__(self, num_levels = 6, name = 'fp_extractor'):
         self.num_levels = num_levels
-        self.filters_list = [16, 32, 64, 96, 128, 192]
-        self.batch_norm = batch_norm
+        self.filters = [16, 32, 64, 96, 128, 192]
         self.name = name
 
     def __call__(self, x, reuse = True):
@@ -29,16 +19,42 @@ class FeaturePyramidExtractor(object):
                 
             feature_pyramid = []
             for l in range(self.num_levels):
-                x = _conv_block(self.filters_list[l], (3, 3),
-                                (2, 2), self.batch_norm)(x)
-                x = _conv_block(self.filters_list[l], (3, 3),
-                                (1, 1), self.batch_norm)(x)
+                x = tf.layers.Conv2D(self.filters[l], (3, 3), (2, 2), 'same')(x)
+                x = tf.nn.leaky_relu(x, 0.1)
+                x = tf.layers.Conv2D(self.filters[l], (3, 3), (1, 1), 'same')(x)
+                x = tf.nn.leaky_relu(x, 0.1)
                 feature_pyramid.append(x)
-
+                
             # return feature pyramid by ascent order
-            return feature_pyramid[::-1] 
+            return feature_pyramid[::-1]
 
         
+class FeaturePyramidExtractor_custom(object):
+    def __init__(self, num_levels = 6, name = 'fp_extractor'):
+        self.num_levels = num_levels
+        self.filters = [16, 32, 64, 96, 128, 192]
+        self.name = name
+
+    def __call__(self, x, reuse = True):
+        with tf.variable_scope(self.name) as vs:
+            if reuse:
+                vs.reuse_variables()
+                
+            feature_pyramid = []
+            for l in range(self.num_levels):
+                x = tf.layers.Conv2D(self.filters[l], (3, 3), (2, 2), 'same')(x)
+                x = tf.nn.leaky_relu(x, 0.1)
+                x = tf.layers.Conv2D(self.filters[l], (3, 3), (1, 1), 'same')(x)
+                x = tf.nn.leaky_relu(x, 0.1)
+                x = tf.layers.Conv2D(self.filters[l], (3, 3), (1, 1), 'same')(x)
+                x = tf.nn.leaky_relu(x, 0.1)
+                feature_pyramid.append(x)
+                
+            # return feature pyramid by ascent order
+            return feature_pyramid[::-1]
+
+
+# Warping layer ---------------------------------
 def nearest_warp(x, flow):
     grid_b, grid_y, grid_x = get_grid(x)
     flow = tf.cast(flow, tf.int32)
@@ -94,9 +110,8 @@ def bilinear_warp(x, flow):
     c_11 = tf.expand_dims((fy - fy_0)*(fx - fx_0), axis = 3)
 
     return c_00*x_00 + c_01*x_01 + c_10*x_10 + c_11*x_11
-        
-class WarpingLayer(object):
 
+class WarpingLayer(object):
     def __init__(self, warp_type = 'nearest', name = 'warping'):
         self.warp = warp_type
         self.name = name
@@ -108,11 +123,13 @@ class WarpingLayer(object):
         with tf.name_scope(self.name) as ns:
             assert self.warp in ['nearest', 'bilinear']
             if self.warp == 'nearest':
-                return nearest_warp(x, flow)
+                x_warped = nearest_warp(x, flow)
             else:
-                return bilinear_warp(x, flow)
+                x_warped = bilinear_warp(x, flow)
+            return x_warped
 
 
+# Cost volume layer -------------------------------------
 def pad2d(x, vpad, hpad):
     return tf.pad(x, [[0, 0], vpad, hpad, [0, 0]])
 
@@ -128,7 +145,6 @@ def get_cost(x, warped, shift):
     return tf.reduce_sum(crop2d(cost_pad, [vt, vb], [hl, hr]), axis = 3)
             
 class CostVolumeLayer(object):
-
     def __init__(self, search_range = 4, name = 'cost_volume'):
         self.s_range = search_range
         self.name = name
@@ -154,19 +170,21 @@ class CostVolumeLayer(object):
                     cost[I] = get_c(shift = [-i, j]); I+=1
                     cost[I] = get_c(shift = [i, -j]); I+=1
 
-            return tf.stack(cost, axis = 3) / cost_length
+            cost = tf.stack(cost, axis = 3)/cost_length
+            cost = tf.nn.leaky_relu(cost, 0.1)
+            return cost
             
-        
-class OpticalFlowEstimator(object):
 
-    def __init__(self, batch_norm, name = 'of_estimator'):
-        self.batch_norm = batch_norm
+# Optical flow estimator module simple/original -----------------------------------------
+class OpticalFlowEstimator(object):
+    def __init__(self, name = 'of_estimator'):
+        self.batch_norm = False
         self.name = name
 
-    def __call__(self, x, cost, flow, reuse = True):
+    def __call__(self, cost, x, flow):
         with tf.variable_scope(self.name) as vs:
             flow = tf.cast(flow, dtype = tf.float32)
-            x = tf.concat([x, cost, flow], axis = 3)
+            x = tf.concat([cost, x, flow], axis = 3)
             x = _conv_block(128, (3, 3), (1, 1), self.batch_norm)(x)
             x = _conv_block(128, (3, 3), (1, 1), self.batch_norm)(x)
             x = _conv_block(96, (3, 3), (1, 1), self.batch_norm)(x)
@@ -176,9 +194,49 @@ class OpticalFlowEstimator(object):
 
             return feature, flow # x:processed feature, w:processed flow
 
-    
-class ContextNetwork(object):
 
+class OpticalFlowEstimator_custom(object):
+    def __init__(self, name = 'of_estimator'):
+        self.name = name
+
+    def __call__(self, cost, feature_0 = None, flow_up = None, feature_up = None,
+                 is_output = False):
+        with tf.variable_scope(self.name) as vs:
+            if feature_0 is None and flow_up is None and feature_up is None:
+                x = cost
+            elif feature_0 is not None and flow_up is not None and feature_up is not None:
+                x = tf.concat([cost, feature_0, flow_up, feature_up], axis = 3)
+            else:
+                raise ValueError('Invalid value in feature_0, flow_up, or feature_up')
+
+            # DenseNet
+            conv = tf.layers.Conv2D(128, (3, 3), (1, 1), 'same')(x)
+            conv = tf.nn.leaky_relu(conv, 0.1)
+            x = tf.concat([conv, x], axis = 3)
+            conv = tf.layers.Conv2D(128, (3, 3), (1, 1), 'same')(x)
+            conv = tf.nn.leaky_relu(conv, 0.1)
+            x = tf.concat([conv, x], axis = 3)
+            conv = tf.layers.Conv2D(96, (3, 3), (1, 1), 'same')(x)
+            conv = tf.nn.leaky_relu(conv, 0.1)
+            x = tf.concat([conv, x], axis = 3)
+            conv = tf.layers.Conv2D(64, (3, 3), (1, 1), 'same')(x)
+            conv = tf.nn.leaky_relu(conv, 0.1)
+            x = tf.concat([conv, x], axis = 3)
+            conv = tf.layers.Conv2D(32, (3, 3), (1, 1), 'same')(x)
+            conv = tf.nn.leaky_relu(conv, 0.1)
+            x = tf.concat([conv, x], axis = 3)
+            flow = tf.layers.Conv2D(2, (3, 3), (1, 1), 'same')(x)
+
+            if is_output:
+                return x, flow
+            else:
+                flow_up = tf.layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')(x)
+                feature_up = tf.layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')(x)
+                return flow, flow_up, feature_up
+
+
+# Context module -----------------------------------------------
+class ContextNetwork(object):
     def __init__(self, name = 'context'):
         self.name = name
 
@@ -187,22 +245,22 @@ class ContextNetwork(object):
             x = tf.concat([feature, flow], axis = 3)
             x = tf.layers.Conv2D(128, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
-            x = tf.nn.leaky_relu(x, 0.2)
+            x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(128, (3, 3), (1, 1),'same',
                                  dilation_rate = (2, 2))(x)
-            x = tf.nn.leaky_relu(x, 0.2)
+            x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(128, (3, 3), (1, 1),'same',
                                  dilation_rate = (4, 4))(x)
-            x = tf.nn.leaky_relu(x, 0.2)
+            x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(96, (3, 3), (1, 1),'same',
                                  dilation_rate = (8, 8))(x)
-            x = tf.nn.leaky_relu(x, 0.2)
+            x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(64, (3, 3), (1, 1),'same',
                                  dilation_rate = (16, 16))(x)
-            x = tf.nn.leaky_relu(x, 0.2)
+            x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(32, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
-            x = tf.nn.leaky_relu(x, 0.2)
+            x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(2, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
             return x+flow
