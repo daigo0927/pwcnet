@@ -202,12 +202,10 @@ class OpticalFlowEstimator_custom(object):
     def __call__(self, cost, feature_0 = None, flow_up = None, feature_up = None,
                  is_output = False):
         with tf.variable_scope(self.name) as vs:
-            if feature_0 is None and flow_up is None and feature_up is None:
-                x = cost
-            elif feature_0 is not None and flow_up is not None and feature_up is not None:
-                x = tf.concat([cost, feature_0, flow_up, feature_up], axis = 3)
-            else:
-                raise ValueError('Invalid value in feature_0, flow_up, or feature_up')
+            x = cost
+            for f in [feature_0, flow_up, feature_up]:
+                if f is not None:
+                    x = tf.concat([x, f], axis = 3)
 
             # DenseNet
             conv = tf.layers.Conv2D(128, (3, 3), (1, 1), 'same')(x)

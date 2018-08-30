@@ -9,53 +9,39 @@ def L2loss(x, y): # shape(# batch, h, w, 2)
 
 # end point error, each element is same as L2 loss
 def EPE(flows_gt, flows):
+    # Given ground truth and estimated flow must be unscaled
     return tf.reduce_mean(tf.norm(flows_gt-flows, ord = 2, axis = 3))
 
 def multiscale_loss(flows_gt, flows_pyramid,
                     weights, name = 'multiscale_loss'):
+    # Argument flows_gt must be unscaled, scaled inside of this loss function
     with tf.name_scope(name) as ns:
-        _, H, W, _ = tf.unstack(tf.shape(flows_gt))
-        # loss, epe = 0., 0.
-        loss, epe = 0., 0.
-        loss_levels, epe_levels = [], []
-        
-        # processing from coarce-to-fine level
+        # Scale the ground truth flow, stated Sec.4 in the original paper
+        flows_gt_scaled = flows_gt/20.
+
+        # Calculate mutiscale loss
+        loss = 0.
         for l, (weight, fs) in enumerate(zip(weights, flows_pyramid)):
+            # Downsampling the scaled ground truth flow
             _, h, w, _ = tf.unstack(tf.shape(fs))
+            fs_gt_down = tf.image.resize_bilinear(flows_gt_scaled, (h, w))
+            # Calculate l2 loss
+            loss += weight*L2loss(fs_gt_down, fs)
 
-            fs_gt = tf.image.resize_bilinear(flows_gt, (h, w))\
-                    /tf.cast(H/h, dtype = tf.float32)
-            
-            loss_level = L2loss(fs_gt, fs)
-            loss += weight * loss_level
-            loss_levels.append(loss_level)
-
-            epe_level = EPE(fs_gt, fs)
-            epe += epe_level
-            epe_levels.append(epe_level)
-        
-        return loss, epe, loss_levels, epe_levels
+        return loss
 
 def multirobust_loss(flows_gt, flows_pyramid,
                      weights, epsilon = 0.01,
                      q = 0.4, name = 'multirobust_loss'):
     with tf.name_scope(name) as ns:
-        _, H, W, _ = tf.unstack(tf.shape(flows_gt))
-        # loss, epe = 0., 0.
-        loss, epe = 0., 0.
-        loss_levels, epe_levels = [], []
-        
+        flows_gt_scaled = flows_gt/20.
+        loss = 0.
         for l, (weight, fs) in enumerate(zip(weights, flows_pyramid)):
+            # Downsampling the scaled ground truth flow
             _, h, w, _ = tf.unstack(tf.shape(fs))
-            
-            fs_gt = tf.image.resize_bilinear(flows_gt, (h, w))\
-                    /tf.cast(H/h, dtype = tf.float32)
-            
-            loss_level = L1loss(fs_gt, fs)
-            loss += weight * (loss_level+epsilon)**q
-            loss_levels.append(loss_level)
+            fs_gt_down = tf.image.resize_bilinear(flows_gt_scaled, (h, w))
+            # Calculate l1 loss
+            _l = L1loss(fs_gt_down, fs)
+            loss += weight*(loss_level+epsilon)**q
 
-            epe = EPE(fs_gt, fs)
-            epe_levels.append(epe)
-
-        return loss, epe, loss_levels, epe_levels
+        return loss

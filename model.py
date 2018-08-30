@@ -94,10 +94,11 @@ class PWCDCNet(object):
 
     def __call__(self, images_0, images_1):
         with tf.variable_scope(self.name) as vs:
-            pyramid_0 = self.fp_extractor(images_0, reuse = 0)
+            pyramid_0 = self.fp_extractor(images_0, reuse = False)
             pyramid_1 = self.fp_extractor(images_1)
 
             flows = []
+            flow_up, feature_up = None, None
             for l, (feature_0, feature_1) in enumerate(zip(pyramid_0, pyramid_1)):
                 print(f'Level {l}')
 
@@ -107,19 +108,24 @@ class PWCDCNet(object):
                 else:
                     feature_1_warped = self.warp_layer(feature_1, flow_up*self.scales[l])
 
+                # Cost volume calculation
                 cost = self.cv_layer(feature_0, feature_1_warped)
-                if l == 0:
-                    flow, flow_up, feature_up = self.of_estimators[l](cost)
-                elif l < self.output_level:
+                # Optical flow estimation
+                if l < self.output_level:
                     flow, flow_up, feature_up \
                         = self.of_estimators[l](cost, feature_0, flow_up, feature_up)
                 else:
                     # At output level
                     feature, flow = self.of_estimators[l](cost, feature_0, flow_up, feature_up,
                                                           is_output = True)
+                    # Context processing
                     flow = self.context(feature, flow)
                     flows.append(flow)
-                    return flows
+                    # Obtain finally scale-adjusted flow
+                    upscale = 2**(self.num_levels-self.output_level)
+                    _, h, w, _ = tf.unstack(tf.shape(flow))
+                    flow_final = tf.image.resize_bilinear(flow, (h*upscale, w*upscale))*20.
+                    return flow_final, flows
 
                 flows.append(flow)
 

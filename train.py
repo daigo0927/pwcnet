@@ -5,10 +5,10 @@ import tensorflow as tf
 import numpy as np
 import torch
 from torch.utils import data
+from functools import partial
 
-from model import PWCNet
+from model import PWCDCNet
 from datahandler.utils import get_dataset
-# from dataset import get_dataset
 from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
 from utils import show_progress
 from flow_utils import vis_flow_pyramid
@@ -28,8 +28,6 @@ class Trainer(object):
         data_args = {'dataset_dir':self.args.dataset_dir, 'cropper':self.args.crop_type,
                      'crop_shape':self.args.crop_shape, 'resize_shape':self.args.resize_shape,
                      'resize_scale':self.args.resize_scale}
-        # train_dataset = dataset(train_or_test = 'train', **data_args)
-        # val_dataset = dataset(train_or_test = 'test', **data_args)
         train_dataset = dataset(train_or_val = 'train', **data_args)
         val_dataset = dataset(train_or_val = 'val', **data_args)
 
@@ -44,23 +42,21 @@ class Trainer(object):
                                      name = 'images')
         self.flows_gt = tf.placeholder(tf.float32, shape = [None]+args.image_size+[2],
                                        name = 'flows')
-        self.model = PWCNet(self.args.num_levels, self.args.search_range,
-                            self.args.output_level, self.args.batch_norm,
-                            self.args.context)
-        self.finalflow, self.flows_pyramid, self.pyramid \
-            = self.model(self.images[:,0], self.images[:,1])
+        self.model = PWCDCNet(self.args.num_levels, self.args.search_range,
+                              self.args.output_level)
+        self.flow_final, self.flows = self.model(self.images[:,0], self.images[:,1])
 
         if self.args.loss is 'multiscale':
             self.criterion = multiscale_loss
         else:
-            self.criterion = multirobust_loss
+            self.criterion =\
+              partial(multirobust_loss, epsilon = self.args.epsilon, q = self.args.q)
             
-        self.loss, self.epe, self.loss_levels, self.epe_levels \
-            = self.criterion(self.flows_gt, self.flows_pyramid, self.args.weights)
+        _loss = self.criterion(self.flows_gt, self.flows, self.args.weights)
         weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
-        self.loss_reg = self.loss + self.args.gamma*weights_l2
+        self.loss = _loss + self.args.gamma*weights_l2
 
-        self.epe_final = EPE(self.flows_gt, self.finalflow)
+        self.epe = EPE(self.flows_gt, self.flow_final)
 
         if self.args.lr_scheduling:
             self.global_step = tf.Variable(0, trainable = False)
@@ -74,7 +70,7 @@ class Trainer(object):
             lr = self.args.lr
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
-                         .minimize(self.loss_reg, var_list = self.model.vars)
+                         .minimize(self.loss, var_list = self.model.vars)
         self.saver = tf.train.Saver()
 
         if self.args.resume is not None:
@@ -91,14 +87,14 @@ class Trainer(object):
                 flows_gt = flows_gt.numpy()
                 
                 time_s = time.time()
-                _, _, loss_reg, epe_final = \
+                _, _, loss, epe = \
                   self.sess.run([self.optimizer, self.global_step_update,
-                                 self.loss_reg, self.epe_final],
+                                 self.loss, self.epe],
                                 feed_dict = {self.images: images, self.flows_gt: flows_gt})
 
                 if i%20 == 0:
                     batch_time = time.time() - time_s
-                    kwargs = {'loss':loss_reg, 'epe':epe_final, 'batch time':batch_time}
+                    kwargs = {'loss':loss, 'epe':epe, 'batch time':batch_time}
                     show_progress(e+1, i+1, self.num_batches, **kwargs)
 
             loss_vals, epe_vals = [], []
@@ -106,8 +102,8 @@ class Trainer(object):
                 images_val = images_val.numpy()/255.0
                 flows_gt_val = flows_gt_val.numpy()
 
-                flows_pyramid, loss_val, epe_val \
-                    = self.sess.run([self.flows_pyramid, self.loss_reg, self.epe_final],
+                flows, loss_val, epe_val \
+                    = self.sess.run([self.flows, self.loss, self.epe],
                                     feed_dict = {self.images: images_val,
                                                  self.flows_gt: flows_gt_val})
                 loss_vals.append(loss_val)
@@ -121,10 +117,14 @@ class Trainer(object):
             if self.args.visualize:
                 if not os.path.exists('./figure'):
                     os.mkdir('./figure')
-                flow_pyramid = [f_py[0] for f_py in flows_pyramid]
+                # Estimated flow values are downscaled, rescale them compatible to the ground truth
+                flow_set = []
+                for l, flow in enumerate(flows):
+                    upscale = 20/2**(self.args.output_level-l)
+                    flow_set.append(flow[0]*upscale)
                 flow_gt = flows_gt_val[0]
                 images_v = images_val[0]
-                vis_flow_pyramid(flow_pyramid, flow_gt, images_v,
+                vis_flow_pyramid(flow_set, flow_gt, images_v,
                                  f'./figure/flow_{str(e+1).zfill(4)}.pdf')
 
             if not os.path.exists('./model'):
@@ -162,10 +162,6 @@ if __name__ == '__main__':
                         help = 'Final output level for estimated flow [4]')
     parser.add_argument('--search_range', type = int, default = 4,
                         help = 'Search range for cost-volume calculation [4]')
-    parser.add_argument('--batch_norm', type = str, default = False,
-                        help = 'Whether utilize batchnormalization [False]')
-    parser.add_argument('--context', default = 'all', choices = ['all', 'final'],
-                        help = 'How insert context network [all/final]')
 
     parser.add_argument('--loss', default = 'multiscale', choices = ['multiscale', 'robust'],
                         help = 'Loss function choice in [multiscale/robust]')
