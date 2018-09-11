@@ -4,21 +4,18 @@ from modules import *
 
 
 class PWCNet(object):
-    def __init__(self, num_levels = 6, search_range = 4,
-                 output_level = 4, batch_norm = False, context = 'all',
-                 name = 'pwcnet'):
-        
+    def __init__(self, num_levels = 6, search_range = 4, warp_type = 'bilinear',
+                 output_level = 4, name = 'pwcnet'):
         self.num_levels = num_levels
         self.s_range = search_range
-        assert output_level < num_levels, 'output_level must be smaller than num_levels'
+        self.warp_type = warp_type
+        assert output_level < num_levels, 'Should set output_level < num_levels'
         self.output_level = output_level
-        self.batch_norm = batch_norm
-        self.context = context
         self.name = name
 
-        self.fp_extractor = FeaturePyramidExtractor(self.num_levels, batch_norm)
-        self.warp_layer = WarpingLayer()
-        self.cv_layer = CostVolumeLayer(search_range)
+        self.fp_extractor = FeaturePyramidExtractor(self.num_levels)
+        self.warp_layer = WarpingLayer(self.warp_type)
+        self.cv_layer = CostVolumeLayer(self.s_range)
         self.of_estimators = [OpticalFlowEstimator(self.batch_norm,
                                                    name = f'optflow_{l}')\
                               for l in range(self.num_levels)]
@@ -75,16 +72,17 @@ class PWCNet(object):
 
 
 class PWCDCNet(object):
-    def __init__(self, num_levels = 6, search_range = 4, output_level = 4,
-                 name = 'pwcdcnet'):
+    def __init__(self, num_levels = 6, search_range = 4, warp_type = 'bilinear',
+                 output_level = 4, name = 'pwcdcnet'):
         self.num_levels = num_levels
         self.s_range = search_range
+        self.warp_type = warp_type
         assert output_level < num_levels, 'Should set output_level < num_levels'
         self.output_level = output_level
         self.name = name
 
         self.fp_extractor = FeaturePyramidExtractor_custom(self.num_levels)
-        self.warp_layer = WarpingLayer()
+        self.warp_layer = WarpingLayer(self.warp_type)
         self.cv_layer = CostVolumeLayer(search_range)
         self.of_estimators = [OpticalFlowEstimator_custom(name = f'optflow_{l}')\
                               for l in range(self.num_levels)]
@@ -132,5 +130,3 @@ class PWCDCNet(object):
     @property
     def vars(self):
         return [var for var in tf.global_variables() if self.name in var.name]
-
-                

@@ -43,7 +43,7 @@ class Trainer(object):
         self.flows_gt = tf.placeholder(tf.float32, shape = [None]+args.image_size+[2],
                                        name = 'flows')
         self.model = PWCDCNet(self.args.num_levels, self.args.search_range,
-                              self.args.output_level)
+                              self.args.warp_type, self.args.output_level)
         self.flow_final, self.flows = self.model(self.images[:,0], self.images[:,1])
 
         if self.args.loss is 'multiscale':
@@ -158,10 +158,12 @@ if __name__ == '__main__':
 
     parser.add_argument('--num_levels', type = int, default = 6,
                         help = '# of levels for feature extraction [6]')
-    parser.add_argument('--output_level', type = int, default = 4,
-                        help = 'Final output level for estimated flow [4]')
     parser.add_argument('--search_range', type = int, default = 4,
                         help = 'Search range for cost-volume calculation [4]')
+    parser.add_argument('--warp_type', default = 'bilinear', choices = ['bilinear', 'nearest'],
+                        help = 'Warping protocol, [bilinear] or nearest')
+    parser.add_argument('--output_level', type = int, default = 4,
+                        help = 'Final output level for estimated flow [4]')
 
     parser.add_argument('--loss', default = 'multiscale', choices = ['multiscale', 'robust'],
                         help = 'Loss function choice in [multiscale/robust]')
