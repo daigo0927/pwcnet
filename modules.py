@@ -2,8 +2,6 @@ import numpy as np
 import tensorflow as tf
 from functools import partial
 
-from utils import get_grid
-
 
 # Feature pyramid extractor module simple/original -----------------------
 class FeaturePyramidExtractor(object):
@@ -52,9 +50,17 @@ class FeaturePyramidExtractor_custom(object):
                 
             # return feature pyramid by ascent order
             return feature_pyramid[::-1]
-
+        
 
 # Warping layer ---------------------------------
+def get_grid(x):
+    batch_size, height, width, filters = tf.unstack(tf.shape(x))
+    Bg, Yg, Xg = tf.meshgrid(tf.range(batch_size), tf.range(height), tf.range(width),
+                             indexing = 'ij')
+    # return indices volume indicate (batch, y, x)
+    # return tf.stack([Bg, Yg, Xg], axis = 3)
+    return Bg, Yg, Xg # return collectively for elementwise processing
+
 def nearest_warp(x, flow):
     grid_b, grid_y, grid_x = get_grid(x)
     flow = tf.cast(flow, tf.int32)
