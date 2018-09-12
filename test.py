@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 import imageio
 
-from model import PWCNet
+from model import PWCDCNet
 from flow_utils import vis_flow_pyramid
 
 class Tester(object):
@@ -25,8 +25,8 @@ class Tester(object):
         self.images_tf = tf.expand_dims(tf.convert_to_tensor(self.images, dtype = tf.float32),
                                         axis = 0) # shape(1, 2, h, w, 3)
 
-        self.model = PWCNet()
-        self.finalflow, self.flow_pyramid, _ \
+        self.model = PWCDCNet()
+        self.flow_final, self.flows \
           = self.model(self.images_tf[:,0], self.images_tf[:,1])
 
         self.saver = tf.train.Saver()
@@ -41,17 +41,20 @@ class Tester(object):
         if self.args.time:
             time_s = time.time()
             for _ in tqdm(range(1000)):
-                flow_pyramid = self.sess.run(self.flow_pyramid)
+                flows = self.sess.run(self.flows)
             time_iter = (time.time()-time_s)/1000
             print(f'Inference time: {time_iter} sec (averaged over 1000 iterations)')
         else:
-            flow_pyramid = self.sess.run(self.flow_pyramid)
+            flows = self.sess.run(self.flows)
             
-        flow_pyramid = [fpy[0] for fpy in flow_pyramid]
+        flow_set = []
+        for l, flow in enumerate(flows):
+            upscale = 20/2**(self.model.output_level-l)
+            flow_set.append(flow[0]*upscale)
         if not os.path.exists('./test_figure'):
             os.mkdir('./test_figure')
         fname = '_'.join(re.split('[/.]', self.args.input_images[0])[-3:-1])
-        vis_flow_pyramid(flow_pyramid, images = self.images, filename = f'./test_figure/test_{fname}.pdf')
+        vis_flow_pyramid(flow_set, images = self.images, filename = f'./test_figure/test_{fname}.pdf')
         print('Figure saved')
 
 if __name__ == '__main__':
