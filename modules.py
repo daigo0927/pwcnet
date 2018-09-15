@@ -28,17 +28,27 @@ class FeaturePyramidExtractor(object):
 
         
 class FeaturePyramidExtractor_custom(object):
+    """ Feature pyramid extractor module"""
     def __init__(self, num_levels = 6, name = 'fp_extractor'):
         self.num_levels = num_levels
         self.filters = [16, 32, 64, 96, 128, 192]
         self.name = name
 
-    def __call__(self, x, reuse = True):
+    def __call__(self, images, reuse = True):
+        """
+        Args:
+        - images (batch, h, w, 3): input images
+
+        Returns:
+        - features_pyramid (batch, h_l, w_l, nch_l) for each scale levels:
+          extracted feature pyramid (deep -> shallow order)
+        """
         with tf.variable_scope(self.name) as vs:
             if reuse:
                 vs.reuse_variables()
                 
-            feature_pyramid = []
+            features_pyramid = []
+            x = images
             for l in range(self.num_levels):
                 x = tf.layers.Conv2D(self.filters[l], (3, 3), (2, 2), 'same')(x)
                 x = tf.nn.leaky_relu(x, 0.1)
@@ -46,10 +56,10 @@ class FeaturePyramidExtractor_custom(object):
                 x = tf.nn.leaky_relu(x, 0.1)
                 x = tf.layers.Conv2D(self.filters[l], (3, 3), (1, 1), 'same')(x)
                 x = tf.nn.leaky_relu(x, 0.1)
-                feature_pyramid.append(x)
+                features_pyramid.append(x)
                 
             # return feature pyramid by ascent order
-            return feature_pyramid[::-1]
+            return features_pyramid[::-1]
         
 
 # Warping layer ---------------------------------
@@ -142,43 +152,47 @@ def pad2d(x, vpad, hpad):
 def crop2d(x, vcrop, hcrop):
     return tf.keras.layers.Cropping2D([vcrop, hcrop])(x)
 
-def get_cost(x, warped, shift):
+def get_cost(features_0, features_0from1, shift):
+    """
+    Calculate cost volume for specific shift
+
+    - inputs
+    features_0 (batch, h, w, nch): feature maps at time slice 0
+    features_0from1 (batch, h, w, nch): feature maps at time slice 0 warped from 1
+    shift (2): spatial (vertical and horizontal) shift to be considered
+
+    - output
+    cost (batch, h, w): cost volume map for the given shift
+    """
     v, h = shift # vertical/horizontal element
     vt, vb, hl, hr =  max(v,0), abs(min(v,0)), max(h,0), abs(min(h,0)) # top/bottom left/right
-    x_pad = pad2d(x, [vt, vb], [hl, hr])
-    warped_pad = pad2d(warped, [vb, vt], [hr, hl])
-    cost_pad = x_pad*warped_pad
-    return tf.reduce_sum(crop2d(cost_pad, [vt, vb], [hl, hr]), axis = 3)
+    f_0_pad = pad2d(features_0, [vt, vb], [hl, hr])
+    f_0from1_pad = pad2d(features_0from1, [vb, vt], [hr, hl])
+    cost_pad = f_0_pad*f_0from1_pad
+    return tf.reduce_mean(crop2d(cost_pad, [vt, vb], [hl, hr]), axis = 3)
             
 class CostVolumeLayer(object):
+    """ Cost volume module """
     def __init__(self, search_range = 4, name = 'cost_volume'):
         self.s_range = search_range
         self.name = name
 
-    def __call__(self, x, warped):
+    def __call__(self, features_0, features_0from1):
         with tf.name_scope(self.name) as ns:
-            b, h, w, f = tf.unstack(tf.shape(x))
+            b, h, w, f = tf.unstack(tf.shape(features_0))
             cost_length = (2*self.s_range+1)**2
 
-            cost = [0]*cost_length
-            cost[0] = tf.reduce_sum(warped*x, axis  = 3)
-            I = 1
-            get_c = partial(get_cost, x, warped)
-            for i in range(1, self.s_range+1):
-                cost[I] = get_c(shift = [-i, 0]); I+=1
-                cost[I] = get_c(shift = [i, 0]); I+=1
-                cost[I] = get_c(shift = [0, -i]); I+=1
-                cost[I] = get_c(shift = [0, i]); I+=1
+            get_c = partial(get_cost, features_0, features_0from1)
+            cv = [0]*cost_length
+            depth = 0
+            for v in range(-self.s_range, self.s_range+1):
+                for h in range(-self.s_range, self.s_range+1):
+                    cv[depth] = get_c(shift = [v, h])
+                    depth += 1
 
-                for j in range(1, self.s_range+1):
-                    cost[I] = get_c(shift = [-i, -j]); I+=1
-                    cost[I] = get_c(shift = [i, j]); I+=1
-                    cost[I] = get_c(shift = [-i, j]); I+=1
-                    cost[I] = get_c(shift = [i, -j]); I+=1
-
-            cost = tf.stack(cost, axis = 3)/cost_length
-            cost = tf.nn.leaky_relu(cost, 0.1)
-            return cost
+            cv = tf.stack(cv, axis = 3)
+            cv = tf.nn.leaky_relu(cv, 0.1)
+            return cv
             
 
 # Optical flow estimator module simple/original -----------------------------------------
@@ -202,51 +216,85 @@ class OpticalFlowEstimator(object):
 
 
 class OpticalFlowEstimator_custom(object):
-    def __init__(self, name = 'of_estimator'):
+    """ Optical flow estimator module """
+
+    def __init__(self, use_dc = False, name = 'of_estimator'):
+        """
+        Args:
+        - use_dc (bool): optional bool to use dense-connection, False as default
+        - name: module name
+        """
+        self.filters = [128, 128, 96, 64, 32]
+        self.use_dc = use_dc
         self.name = name
 
-    def __call__(self, cost, feature_0 = None, flow_up = None, feature_up = None,
+    def __call__(self, cv, features_0 = None, flows_up_prev = None, features_up_prev = None,
                  is_output = False):
-        with tf.variable_scope(self.name) as vs:
-            x = cost
-            for f in [feature_0, flow_up, feature_up]:
-                if f is not None:
-                    x = tf.concat([x, f], axis = 3)
+        """
+        Args:
+        - cv (batch, h, w, nch_cv): cost volume
+        - features_0 (batch, h, w, nch_f0): feature map at time slice t
+        - flows_up_prev (batch, h, w, 2): upscaled optical flow passed from previous OF-estimator
+        - features_up_prev (batch, h, w, nch_fup): upscaled feature map passed from previous OF-estimator
+        - is_output (bool): whether at output level or not
 
-            # DenseNet
-            conv = tf.layers.Conv2D(128, (3, 3), (1, 1), 'same')(x)
-            conv = tf.nn.leaky_relu(conv, 0.1)
-            x = tf.concat([conv, x], axis = 3)
-            conv = tf.layers.Conv2D(128, (3, 3), (1, 1), 'same')(x)
-            conv = tf.nn.leaky_relu(conv, 0.1)
-            x = tf.concat([conv, x], axis = 3)
-            conv = tf.layers.Conv2D(96, (3, 3), (1, 1), 'same')(x)
-            conv = tf.nn.leaky_relu(conv, 0.1)
-            x = tf.concat([conv, x], axis = 3)
-            conv = tf.layers.Conv2D(64, (3, 3), (1, 1), 'same')(x)
-            conv = tf.nn.leaky_relu(conv, 0.1)
-            x = tf.concat([conv, x], axis = 3)
-            conv = tf.layers.Conv2D(32, (3, 3), (1, 1), 'same')(x)
-            conv = tf.nn.leaky_relu(conv, 0.1)
-            x = tf.concat([conv, x], axis = 3)
-            flow = tf.layers.Conv2D(2, (3, 3), (1, 1), 'same')(x)
+        Returns:
+        - flows (batch, h, w, 2): convolved optical flow
+
+        and 
+        is_output: False
+        - flows_up (batch, 2*h, 2*w, 2): upsampled optical flow
+        - features_up (batch, 2*h, 2*w, nch_f): upsampled feature map
+
+        is_output: True
+        - features (batch, h, w, nch_f): convolved feature map
+        """
+        with tf.variable_scope(self.name) as vs:
+            features = cv
+            for f in [features_0, flows_up_prev, features_up_prev]:
+                if f is not None:
+                    features = tf.concat([features, f], axis = 3)
+
+            for f in self.filters:
+                conv = tf.layers.Conv2D(f, (3, 3), (1, 1), 'same')(features)
+                conv = tf.nn.leaky_relu(conv, 0.1)
+                if self.use_dc:
+                    features = tf.concat([conv, features], axis = 3)
+                else:
+                    features = conv
+
+            flows = tf.layers.Conv2D(2, (3, 3), (1, 1), 'same')(features)
+            if flows_up_prev is not None:
+                # Residual connection
+                flows += flows_up_prev
 
             if is_output:
-                return x, flow
+                return flows, features
             else:
-                flow_up = tf.layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')(x)
-                feature_up = tf.layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')(x)
-                return flow, flow_up, feature_up
+                _, h, w, _ = tf.unstack(tf.shape(flows))
+                flows_up = tf.image.resize_bilinear(flows, (2*h, 2*w))
+                features_up = tf.image.resize_bilinear(features, (2*h, 2*w))
+                return flows, flows_up, features_up
 
+            
 
 # Context module -----------------------------------------------
 class ContextNetwork(object):
+    """ Context module """
     def __init__(self, name = 'context'):
         self.name = name
 
-    def __call__(self, feature, flow):
+    def __call__(self, flows, features):
+        """
+        Args:
+        - flows (batch, h, w, 2): optical flow
+        - features (batch, h, w, 2): feature map passed from previous OF-estimator
+
+        Returns:
+        - flows (batch, h, w, 2): convolved optical flow
+        """
         with tf.variable_scope(self.name) as vs:
-            x = tf.concat([feature, flow], axis = 3)
+            x = tf.concat([flows, features], axis = 3)
             x = tf.layers.Conv2D(128, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
             x = tf.nn.leaky_relu(x, 0.1)
@@ -267,89 +315,4 @@ class ContextNetwork(object):
             x = tf.nn.leaky_relu(x, 0.1)
             x = tf.layers.Conv2D(2, (3, 3), (1, 1),'same',
                                  dilation_rate = (1, 1))(x)
-            return x+flow
-
-        
-# Utility function for guided filter
-# really thanks for the original DeepGuidedFilter implementation (https://github.com/wuhuikai/DeepGuidedFilter)
-def _diff_x(image, r):
-    assert image.shape.ndims == 4
-    left = image[:, r:2*r+1]
-    middle = image[:, 2*r+1:] - image[:, :-2*r-1]
-    right = image[:, -1:] - image[:, -2*r-1:-r-1]
-    return tf.concat([left, middle, right], axis = 1)
-
-def _diff_y(image, r):
-    assert image.shape.ndims == 4
-    left = image[:, :, r:2*r+1]
-    middle = image[:, :, 2*r+1:] - image[:, :, :-2*r-1]
-    right = image[:, :, -1:] - image[:, :, -2*r-1:-r-1]
-    return tf.concat([left, middle, right], axis = 2)
-        
-def _box_filter(x, r):
-    assert x.shape.ndims == 4
-    return _diff_y(tf.cumsum(_diff_x(tf.cumsum(x, axis = 1), r), axis = 2), r)
-
-# I try to implement fast guided filter (https://arxiv.org/abs/1505.00996)
-class FastGuidedFilter(object):
-    def __init__(self, r, channel_p, downscale = 2,
-                 eps = 1e-8, name = 'guide'):
-        self.r = r # box range
-        self.channel_p = channel_p
-        self.ds = downscale # downscale ratio for fast coeffcients calculation
-        self.eps = eps # small constant
-        self.name = name
-
-    def __call__(self, p, I): # p:filtering input, I:guidance image
-        with tf.name_scope(self.name) as ns:
-            guider = GFCore(I, self.r, self.ds, self.eps)
-            return guider.guide(p, self.channel_p)
-
-
-class GFCore(object):
-    def __init__(self, I, r, downscale, eps):
-        self.I = I
-        self.r = int(r/downscale)
-        self.ds = downscale # downscale = 1: normal guided filter
-        self.eps = eps
-        
-        self._init_guide()
-        
-    def _init_guide(self):
-        _, h_i, w_i, c_i = tf.unstack(tf.shape(self.I))
-        self.h_down = tf.cast(h_i/self.ds, tf.int32)
-        self.w_down = tf.cast(w_i/self.ds, tf.int32)
-        self.I_down = tf.image.resize_images(self.I, (self.h_down, self.w_down))
-        
-        self.N = _box_filter(tf.ones((1, self.h_down, self.w_down, 1),
-                                     dtype = self.I.dtype), r = self.r)
-        self.mean_I = _box_filter(self.I_down, self.r) / self.N
-        self.var_I = _box_filter(self.I_down*self.I_down, self.r) / self.N
-
-    def guide(self, p, channel_p):
-        _, h_p, w_p, c_p = tf.unstack(tf.shape(p))
-        tf.assert_equal(c_p, channel_p)
-        tf.assert_equal(tf.cast([h_p/self.ds, w_p/self.ds], tf.int32),
-                        [self.h_down, self.w_down])
-        p_down = tf.image.resize_images(p, (self.h_down, self.w_down))
-        
-        q = [0]*channel_p
-        for c in range(channel_p):
-            p_c = tf.expand_dims(p_down[:,:,:,c], axis = 3)
-            mean_p = _box_filter(p_c, self.r) / self.N
-            cov_Ip = _box_filter(self.I_down*p_c, self.r) / self.N - self.mean_I*mean_p
-            
-            A_c = cov_Ip / (self.var_I+self.eps)
-            b_c = mean_p - tf.expand_dims(tf.reduce_sum(A_c*self.mean_I, axis = 3),
-                                          axis = 3)
-
-            mean_A_c = _box_filter(A_c, self.r) / self.N
-            mean_A_c = tf.image.resize_images(mean_A_c, (h_p, w_p))
-            mean_b_c = _box_filter(b_c, self.r) / self.N
-            mean_b_c = tf.image.resize_images(mean_b_c, (h_p, w_p))
-
-            q_c = tf.expand_dims(tf.reduce_sum(mean_A_c*self.I, axis = 3), axis = 3)\
-                  + mean_b_c
-            q[c] = q_c
-
-        return tf.concat(q, axis = 3)
+            return flows + x

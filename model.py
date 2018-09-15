@@ -72,11 +72,13 @@ class PWCNet(object):
 
 
 class PWCDCNet(object):
-    def __init__(self, num_levels = 6, search_range = 4, warp_type = 'bilinear',
+    def __init__(self, num_levels = 6, search_range = 4,
+                 warp_type = 'bilinear', use_dc = False,
                  output_level = 4, name = 'pwcdcnet'):
         self.num_levels = num_levels
         self.s_range = search_range
         self.warp_type = warp_type
+        self.use_dc = use_dc
         assert output_level < num_levels, 'Should set output_level < num_levels'
         self.output_level = output_level
         self.name = name
@@ -84,7 +86,7 @@ class PWCDCNet(object):
         self.fp_extractor = FeaturePyramidExtractor_custom(self.num_levels)
         self.warp_layer = WarpingLayer(self.warp_type)
         self.cv_layer = CostVolumeLayer(search_range)
-        self.of_estimators = [OpticalFlowEstimator_custom(name = f'optflow_{l}')\
+        self.of_estimators = [OpticalFlowEstimator_custom(use_dc = self.use_dc, name = f'optflow_{l}')\
                               for l in range(self.num_levels)]
         self.context = ContextNetwork(name = 'context')
         # Upscale factors from deep -> shallow level
@@ -95,37 +97,37 @@ class PWCDCNet(object):
             pyramid_0 = self.fp_extractor(images_0, reuse = False)
             pyramid_1 = self.fp_extractor(images_1)
 
-            flows = []
-            flow_up, feature_up = None, None
-            for l, (feature_0, feature_1) in enumerate(zip(pyramid_0, pyramid_1)):
+            flows_pyramid = []
+            flows_up, features_up = None, None
+            for l, (features_0, features_1) in enumerate(zip(pyramid_0, pyramid_1)):
                 print(f'Level {l}')
 
                 # Warping operation
                 if l == 0:
-                    feature_1_warped = feature_1
+                    features_1_warped = features_1
                 else:
-                    feature_1_warped = self.warp_layer(feature_1, flow_up*self.scales[l])
+                    features_1_warped = self.warp_layer(features_1, flows_up*self.scales[l])
 
                 # Cost volume calculation
-                cost = self.cv_layer(feature_0, feature_1_warped)
+                cv = self.cv_layer(features_0, features_1_warped)
                 # Optical flow estimation
                 if l < self.output_level:
-                    flow, flow_up, feature_up \
-                        = self.of_estimators[l](cost, feature_0, flow_up, feature_up)
+                    flows, flows_up, features_up \
+                        = self.of_estimators[l](cv, features_0, flows_up, features_up)
                 else:
                     # At output level
-                    feature, flow = self.of_estimators[l](cost, feature_0, flow_up, feature_up,
-                                                          is_output = True)
+                    flows, features = self.of_estimators[l](cv, features_0, flows_up, features_up,
+                                                            is_output = True)
                     # Context processing
-                    flow = self.context(feature, flow)
-                    flows.append(flow)
+                    flows = self.context(flows, features)
+                    flows_pyramid.append(flows)
                     # Obtain finally scale-adjusted flow
                     upscale = 2**(self.num_levels-self.output_level)
-                    _, h, w, _ = tf.unstack(tf.shape(flow))
-                    flow_final = tf.image.resize_bilinear(flow, (h*upscale, w*upscale))*20.
-                    return flow_final, flows
+                    _, h, w, _ = tf.unstack(tf.shape(flows))
+                    flows_final = tf.image.resize_bilinear(flows, (h*upscale, w*upscale))*20.
+                    return flows_final, flows_pyramid
 
-                flows.append(flow)
+                flows_pyramid.append(flows)
 
     @property
     def vars(self):
