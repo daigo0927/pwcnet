@@ -42,8 +42,12 @@ class Trainer(object):
                                      name = 'images')
         self.flows_gt = tf.placeholder(tf.float32, shape = [None]+args.image_size+[2],
                                        name = 'flows')
-        self.model = PWCDCNet(self.args.num_levels, self.args.search_range,
-                              self.args.warp_type, self.args.output_level)
+        self.model = PWCDCNet(num_levels = self.args.num_levels,
+                              search_range = self.args.search_range,
+                              warp_type = self.args.warp_type,
+                              use_dc = self.args.use_dc,
+                              output_level = self.args.output_level,
+                              name = 'pwcdcnet')
         self.flow_final, self.flows = self.model(self.images[:,0], self.images[:,1])
 
         if self.args.loss is 'multiscale':
@@ -81,7 +85,7 @@ class Trainer(object):
                     
     def train(self):
         train_start = time.time()
-        for e in range(self.args.n_epochs):
+        for e in range(self.args.num_epochs):
             for i, (images, flows_gt) in enumerate(self.train_loader):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
@@ -138,7 +142,7 @@ if __name__ == '__main__':
                         help = 'Target dataset, [SintelClean]')
     parser.add_argument('--dataset_dir', type = str, required = True,
                         help = 'Directory containing target dataset')
-    parser.add_argument('--n_epochs', type = int, default = 100,
+    parser.add_argument('--num_epochs', type = int, default = 100,
                         help = '# of epochs [100]')
     parser.add_argument('--batch_size', type = int, default = 4,
                         help = 'Batch size [4]')
@@ -162,6 +166,11 @@ if __name__ == '__main__':
                         help = 'Search range for cost-volume calculation [4]')
     parser.add_argument('--warp_type', default = 'bilinear', choices = ['bilinear', 'nearest'],
                         help = 'Warping protocol, [bilinear] or nearest')
+    parser.add_argument('--use-dc', dest = 'use_dc', action = 'store_true',
+                        help = 'Enable dense connection in optical flow estimator, [diabled] as default')
+    parser.add_argument('--no-dc', dest = 'use_dc', action = 'store_false',
+                        help = 'Disable dense connection in optical flow estimator, [disabled] as default')
+    parser.set_defaults(use_dc = False)
     parser.add_argument('--output_level', type = int, default = 4,
                         help = 'Final output level for estimated flow [4]')
 

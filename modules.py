@@ -217,7 +217,6 @@ class OpticalFlowEstimator(object):
 
 class OpticalFlowEstimator_custom(object):
     """ Optical flow estimator module """
-
     def __init__(self, use_dc = False, name = 'of_estimator'):
         """
         Args:
