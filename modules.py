@@ -3,6 +3,18 @@ import tensorflow as tf
 from functools import partial
 
 
+
+def _conv_block(filters, kernel_size = (3, 3), strides = (1, 1), batch_norm = False):
+    def f(x):
+        x = tf.layers.Conv2D(filters, kernel_size,
+                             strides, 'same')(x)
+        if batch_norm:
+            x = tf.layers.BatchNormalization()(x)
+        x = tf.nn.leaky_relu(x, 0.2)
+        return x
+    return f
+
+
 # Feature pyramid extractor module simple/original -----------------------
 class FeaturePyramidExtractor(object):
     def __init__(self, num_levels = 6, name = 'fp_extractor'):
