@@ -24,7 +24,7 @@ def multiscale_loss(flows_gt, flows_pyramid,
         for l, (weight, fs) in enumerate(zip(weights, flows_pyramid)):
             # Downsampling the scaled ground truth flow
             _, h, w, _ = tf.unstack(tf.shape(fs))
-            fs_gt_down = tf.image.resize_bilinear(flows_gt_scaled, (h, w))
+            fs_gt_down = tf.image.resize_nearest_neighbor(flows_gt_scaled, (h, w))
             # Calculate l2 loss
             loss += weight*L2loss(fs_gt_down, fs)
 
@@ -39,7 +39,7 @@ def multirobust_loss(flows_gt, flows_pyramid,
         for l, (weight, fs) in enumerate(zip(weights, flows_pyramid)):
             # Downsampling the scaled ground truth flow
             _, h, w, _ = tf.unstack(tf.shape(fs))
-            fs_gt_down = tf.image.resize_bilinear(flows_gt_scaled, (h, w))
+            fs_gt_down = tf.image.resize_nearest_neighbor(flows_gt_scaled, (h, w))
             # Calculate l1 loss
             _l = L1loss(fs_gt_down, fs)
             loss += weight*(loss_level+epsilon)**q
