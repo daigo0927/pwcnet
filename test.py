@@ -10,6 +10,12 @@ import imageio
 from model import PWCDCNet
 from flow_utils import vis_flow_pyramid
 
+def factor_crop(image, factor = 64):
+    assert image.ndim == 3
+    h, w, _ = image.shape
+    image = image[:factor*(h//factor), :factor*(w//factor)]
+    return image
+
 class Tester(object):
     def __init__(self, args):
         self.args = args
@@ -21,6 +27,7 @@ class Tester(object):
     def _build_graph(self):
         img1_path, img2_path = self.args.input_images
         img1, img2 = map(imageio.imread, (img1_path, img2_path))
+        img1, img2 = map(factor_crop, (img1, img2))
         self.images = np.array([img1, img2])/255.0 # shape(2, h, w, 3)
         self.images_tf = tf.expand_dims(tf.convert_to_tensor(self.images, dtype = tf.float32),
                                         axis = 0) # shape(1, 2, h, w, 3)
