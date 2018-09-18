@@ -12,6 +12,7 @@ input image0, estimated flow at each 5 scale, ground truth flow, input image1
 
 
 **Working confirmed. I hope this helps you.**  
+**Adding PWCDCNet: advanced model! I'm going to make the trained parameters avaliable ASAP! :)**  
 Unofficial implementation of CVPR2018 paper: Deqing Sun *et al.* **"PWC-Net: CNNs for Optical Flow Using Pyramid, Warping, and Cost Volume"**. [arXiv](https://arxiv.org/abs/1709.02371)
 
 
@@ -19,26 +20,26 @@ Unofficial implementation of CVPR2018 paper: Deqing Sun *et al.* **"PWC-Net: CNN
 - Requirements
     - Python 3.6+
     - PyTorch 0.4.0 (mainly in in data handling)
-    - TensorFlow 1.8
+    - TensorFlow 1.8+
 
-- `model_3000epoch/model_3007.ckpt` is fully trained by [SintelClean](http://files.is.tue.mpg.de/sintel/MPI-Sintel-complete.zip) dataset.
+<!-- - `model_3000epoch/model_3007.ckpt` is fully trained by [SintelClean](http://files.is.tue.mpg.de/sintel/MPI-Sintel-complete.zip) dataset. -->
 
 ## Training (the case SintelClean)
 
 ```
 # Training from scratch
-python train.py --dataset SintelClean --dataset_dir path/to/MPI-Sintel-complete 
+python train.py --dataset SintelClean --dataset_dir /path/to/MPI-Sintel-complete 
 ```
 
 ```
 # Start with learned checkpoint
-python train.py --dataset SintelClean --dataset_dir path/to/MPI-Sintel-complete --resume model_3000epoch/model_3007.ckpt
+python train.py --dataset SintelClean --dataset_dir /path/to/MPI-Sintel-complete --resume /path/to/model.ckpt
 ```
 
 After running above script, utilize GPU-id is asked, (-1:CPU). You can use other learning configs (like `--n_epoch` or `--batch_size`) see all arguments in `train.py`, regards.
 
-## Testing (infer optical flow) by paired images
+## Testing (inferring optical flow) by paired images
 
 ```
-python test.py --input_images path/to/image_0 path/to/image_1 --resume path/to/model.ckpt
+python test.py --input_images /path/to/image_0 /path/to/image_1 --resume /path/to/model.ckpt
 ```
