@@ -124,7 +124,7 @@ class Trainer(object):
                 # Estimated flow values are downscaled, rescale them compatible to the ground truth
                 flow_set = []
                 for l, flow in enumerate(flows):
-                    upscale = 20/2**(self.args.output_level-l)
+                    upscale = 20/2**(self.args.num_levels-l)
                     flow_set.append(flow[0]*upscale)
                 flow_gt = flows_gt_val[0]
                 images_v = images_val[0]
