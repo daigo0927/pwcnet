@@ -43,3 +43,7 @@ After running above script, utilize GPU-id is asked, (-1:CPU). You can use other
 ```
 python test.py --input_images /path/to/image_0 /path/to/image_1 --resume /path/to/model.ckpt
 ```
+```
+# for multiple images (using wild-card for 001.png, 002.png, 003.png, ...)
+python test_continuous.py -i /path/to/images* -r /path/to/model.ckpt
+```
