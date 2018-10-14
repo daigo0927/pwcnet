@@ -92,9 +92,9 @@ class PWCDCNet(object):
         # Upscale factors from deep -> shallow level
         self.scales = [None, 0.625, 1.25, 2.5, 5.0, 10., 20.]
 
-    def __call__(self, images_0, images_1):
-        with tf.variable_scope(self.name) as vs:
-            pyramid_0 = self.fp_extractor(images_0, reuse = False)
+    def __call__(self, images_0, images_1, reuse = False):
+        with tf.variable_scope(self.name, reuse = reuse) as vs:
+            pyramid_0 = self.fp_extractor(images_0, reuse = reuse)
             pyramid_1 = self.fp_extractor(images_1)
 
             flows_pyramid = []

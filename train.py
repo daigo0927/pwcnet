@@ -3,12 +3,10 @@ import argparse
 import time
 import tensorflow as tf
 import numpy as np
-import torch
-from torch.utils import data
 from functools import partial
 
 from model import PWCDCNet
-from datahandler.utils import get_dataset
+from dataset_tf.flow import get_dataset
 from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
 from utils import show_progress
 from flow_utils import vis_flow_pyramid
@@ -20,63 +18,75 @@ class Trainer(object):
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         self.sess = tf.Session(config = config)
-        self._build_dataloader()
         self._build_graph()
 
-    def _build_dataloader(self):
-        dataset = get_dataset(self.args.dataset)
-        data_args = {'dataset_dir':self.args.dataset_dir, 'cropper':self.args.crop_type,
-                     'crop_shape':self.args.crop_shape, 'resize_shape':self.args.resize_shape,
-                     'resize_scale':self.args.resize_scale}
-        train_dataset = dataset(train_or_val = 'train', **data_args)
-        val_dataset = dataset(train_or_val = 'val', **data_args)
-
-        load_args = {'batch_size': self.args.batch_size,
-                     'num_workers':self.args.num_workers, 'pin_memory':True}
-        self.num_batches = int(len(train_dataset.samples)/self.args.batch_size)
-        self.train_loader = data.DataLoader(train_dataset, shuffle = True, **load_args)
-        self.val_loader = data.DataLoader(val_dataset, shuffle = False, **load_args)
-        
     def _build_graph(self):
-        self.images = tf.placeholder(tf.float32, shape = [None, 2]+args.image_size+[3],
-                                     name = 'images')
-        self.flows_gt = tf.placeholder(tf.float32, shape = [None]+args.image_size+[2],
-                                       name = 'flows')
-        self.model = PWCDCNet(num_levels = self.args.num_levels,
-                              search_range = self.args.search_range,
-                              warp_type = self.args.warp_type,
-                              use_dc = self.args.use_dc,
-                              output_level = self.args.output_level,
-                              name = 'pwcdcnet')
-        self.flow_final, self.flows = self.model(self.images[:,0], self.images[:,1])
+        pipe = get_dataset(self.args.dataset)
+        shared_keys = ['dataset_dir', 'crop_type', 'crop_shape', 'resize_shape',
+                       'batch_size', 'num_parallel_calls']
+        shared_args = {}
+        for key in shared_keys:
+            shared_args[key] = getattr(self.args, key)
 
-        if self.args.loss is 'multiscale':
-            self.criterion = multiscale_loss
-        else:
-            self.criterion =\
-              partial(multirobust_loss, epsilon = self.args.epsilon, q = self.args.q)
+        with tf.name_scope('IO'):
+            tset = pipe(train_or_val = 'train', shuffle = True, **shared_args)
+            titer = tset.make_one_shot_iterator()
+            self.images, self.flows_gt = titer.get_next()
+            self.images.set_shape((self.args.batch_size, 2, *self.args.crop_shape, 3))
+            self.flows_gt.set_shape((self.args.batch_size, *self.args.crop_shape, 2))
             
-        _loss = self.criterion(self.flows_gt, self.flows, self.args.weights)
-        weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
-        self.loss = _loss + self.args.gamma*weights_l2
+            vset = pipe(train_or_val = 'val', shuffle = False, **shared_args)
+            viter = vset.make_one_shot_iterator()
+            self.images_v, self.flows_gt_v = viter.get_next()
+            self.images_v.set_shape((self.args.batch_size, 2, *self.args.crop_shape, 3))
+            self.flows_gt_v.set_shape((self.args.batch_size, *self.args.crop_shape, 2))
 
-        self.epe = EPE(self.flows_gt, self.flow_final)
+            self.num_batches = len(tset.samples)//self.args.batch_size
+            self.num_batches_v = len(vset.samples)//self.args.batch_size
+        
+        with tf.name_scope('Forward'):
+            model = PWCDCNet(num_levels = self.args.num_levels,
+                             search_range = self.args.search_range,
+                             warp_type = self.args.warp_type,
+                             use_dc = self.args.use_dc,
+                             output_level = self.args.output_level,
+                             name = 'pwcdcnet')
+            self.flows_final, self.flows = model(self.images[:,0], self.images[:,1])
+            self.flows_final_v, self.flows_v \
+                = model(self.images_v[:,0], self.images_v[:,1], reuse = True)
 
-        if self.args.lr_scheduling:
-            self.global_step = tf.Variable(0, trainable = False)
-            self.global_step_update = self.global_step.assign_add(1)
-            boundaries = [200000, 400000, 600000, 800000, 1000000]
-            values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
-            lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
-        else:
-            self.global_step = tf.constant(0)
-            self.global_step_update = tf.constant(0)
-            lr = self.args.lr
+        with tf.name_scope('Loss'):
+            if self.args.loss == 'multiscale':
+                criterion = multiscale_loss
+            else:
+                criterion =\
+                  partial(multirobust_loss, epsilon = self.args.epsilon, q = self.args.q)
+            
+            _loss = criterion(self.flows_gt, self.flows, self.args.weights)
+            _loss_v = criterion(self.flows_gt_v, self.flows_v, self.args.weights)
+            weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in model.vars])
+            self.loss = _loss + self.args.gamma*weights_l2
+            self.loss_v = _loss_v + self.args.gamma*weights_l2
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
-                         .minimize(self.loss, var_list = self.model.vars)
+            self.epe = EPE(self.flows_gt, self.flows_final)
+            self.epe_v = EPE(self.flows_gt_v, self.flows_final_v)
+
+        with tf.name_scope('Optimize'):
+            if self.args.lr_scheduling:
+                self.global_step = tf.train.get_or_create_global_step()
+                boundaries = [200000, 400000, 600000, 800000, 1000000]
+                values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
+                lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
+            else:
+                self.global_step = tf.constant(0)
+                lr = self.args.lr
+
+            self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
+                             .minimize(self.loss, var_list = model.vars)
+            with tf.control_dependencies([self.optimizer]):
+                self.optimizer = tf.assign_add(self.global_step, 1)
+            
         self.saver = tf.train.Saver()
-
         if self.args.resume is not None:
             print(f'Loading learned model from checkpoint {self.args.resume}')
             self.saver.restore(self.sess, self.args.resume)
@@ -86,15 +96,9 @@ class Trainer(object):
     def train(self):
         train_start = time.time()
         for e in range(self.args.num_epochs):
-            for i, (images, flows_gt) in enumerate(self.train_loader):
-                images = images.numpy()/255.0
-                flows_gt = flows_gt.numpy()
-                
+            for i in range(self.num_batches):
                 time_s = time.time()
-                _, _, loss, epe = \
-                  self.sess.run([self.optimizer, self.global_step_update,
-                                 self.loss, self.epe],
-                                feed_dict = {self.images: images, self.flows_gt: flows_gt})
+                _, loss, epe = self.sess.run([self.optimizer, self.loss, self.epe])
 
                 if i%20 == 0:
                     batch_time = time.time() - time_s
@@ -102,14 +106,10 @@ class Trainer(object):
                     show_progress(e+1, i+1, self.num_batches, **kwargs)
 
             loss_vals, epe_vals = [], []
-            for images_val, flows_gt_val in self.val_loader:
-                images_val = images_val.numpy()/255.0
-                flows_gt_val = flows_gt_val.numpy()
+            for i in range(self.num_batches_v):
+                flows_val, loss_val, epe_val \
+                    = self.sess.run([self.flows_v, self.loss_v, self.epe_v])
 
-                flows, loss_val, epe_val \
-                    = self.sess.run([self.flows, self.loss, self.epe],
-                                    feed_dict = {self.images: images_val,
-                                                 self.flows_gt: flows_gt_val})
                 loss_vals.append(loss_val)
                 epe_vals.append(epe_val)
                 
@@ -146,8 +146,8 @@ if __name__ == '__main__':
                         help = '# of epochs [100]')
     parser.add_argument('--batch_size', type = int, default = 4,
                         help = 'Batch size [4]')
-    parser.add_argument('--num_workers', type = int, default = 8,
-                        help = '# of workers for data loading [8]')
+    parser.add_argument('--num_parallel_calls', type = int, default = 2,
+                        help = '# of parallel calls for data loading [2]')
 
     parser.add_argument('--crop_type', type = str, default = 'random',
                         help = 'Crop type for raw data [random]')
@@ -155,10 +155,6 @@ if __name__ == '__main__':
                         help = 'Crop shape for raw data [384, 448]')
     parser.add_argument('--resize_shape', nargs = 2, type = int, default = None,
                         help = 'Resize shape for raw data [None]')
-    parser.add_argument('--resize_scale', type = float, default = None,
-                        help = 'Resize scale for raw data [None]')
-    parser.add_argument('--image_size', nargs = 2, type = int, default = [384, 448],
-                        help = 'Image size to be processed [384, 448]')
 
     parser.add_argument('--num_levels', type = int, default = 6,
                         help = '# of levels for feature extraction [6]')
@@ -205,7 +201,8 @@ if __name__ == '__main__':
     for key, item in vars(args).items():
         print(f'{key} : {item}')
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = input('Input utilize gpu-id (-1:cpu) : ')
+    # os.environ['CUDA_VISIBLE_DEVICES'] = input('Input utilize gpu-id (-1:cpu) : ')
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
     trainer = Trainer(args)
     trainer.train()
