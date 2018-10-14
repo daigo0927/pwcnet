@@ -1,3 +1,6 @@
 [submodule "datahandler"]
 	path = datahandler
 	url = https://github.com/daigo0927/DataUtils.git
+[submodule "dataset_tf"]
+	path = dataset_tf
+	url = https://github.com/daigo0927/dataset_tf.git
