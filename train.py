@@ -11,6 +11,8 @@ from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
 from utils import show_progress
 from flow_utils import vis_flow_pyramid
 
+import pdb
+
 
 class Trainer(object):
     def __init__(self, args):
@@ -29,20 +31,15 @@ class Trainer(object):
             shared_args[key] = getattr(self.args, key)
 
         with tf.name_scope('IO'):
-            tset = pipe(train_or_val = 'train', shuffle = True, **shared_args)
+            tset = pipe(train_or_val = 'train', **shared_args)
             titer = tset.make_one_shot_iterator()
             self.images, self.flows_gt = titer.get_next()
-            self.images.set_shape((self.args.batch_size, 2, *self.args.crop_shape, 3))
-            self.flows_gt.set_shape((self.args.batch_size, *self.args.crop_shape, 2))
             
-            vset = pipe(train_or_val = 'val', shuffle = False, **shared_args)
-            viter = vset.make_one_shot_iterator()
+            vset = pipe(train_or_val = 'val', **shared_args)
+            viter, self.vinitializer = vset.make_initializable_iterator()
             self.images_v, self.flows_gt_v = viter.get_next()
-            self.images_v.set_shape((self.args.batch_size, 2, *self.args.crop_shape, 3))
-            self.flows_gt_v.set_shape((self.args.batch_size, *self.args.crop_shape, 2))
 
             self.num_batches = len(tset.samples)//self.args.batch_size
-            self.num_batches_v = len(vset.samples)//self.args.batch_size
         
         with tf.name_scope('Forward'):
             model = PWCDCNet(num_levels = self.args.num_levels,
@@ -106,12 +103,16 @@ class Trainer(object):
                     show_progress(e+1, i+1, self.num_batches, **kwargs)
 
             loss_vals, epe_vals = [], []
-            for i in range(self.num_batches_v):
-                flows_val, loss_val, epe_val \
-                    = self.sess.run([self.flows_v, self.loss_v, self.epe_v])
-
-                loss_vals.append(loss_val)
-                epe_vals.append(epe_val)
+            self.sess.run([self.vinitializer])
+            while True:
+                try:
+                    images_val, flows_gt_val, flows_val, loss_val, epe_val \
+                      = self.sess.run([self.images_v, self.flows_gt_v, self.flows_v,
+                                       self.loss_v, self.epe_v])
+                    loss_vals.append(loss_val)
+                    epe_vals.append(epe_val)
+                except tf.errors.OutOfRangeError:
+                    break
                 
             g_step = self.sess.run(self.global_step)
             print(f'\r{e+1} epoch validation, loss: {np.mean(loss_vals)}, epe: {np.mean(epe_vals)}'\
@@ -123,12 +124,12 @@ class Trainer(object):
                     os.mkdir('./figure')
                 # Estimated flow values are downscaled, rescale them compatible to the ground truth
                 flow_set = []
-                for l, flow in enumerate(flows):
+                for l, flow in enumerate(flows_val):
                     upscale = 20/2**(self.args.num_levels-l)
                     flow_set.append(flow[0]*upscale)
-                flow_gt = flows_gt_val[0]
-                images_v = images_val[0]
-                vis_flow_pyramid(flow_set, flow_gt, images_v,
+                flow_gt_val = flows_gt_val[0]
+                image_pair_val = images_val[0]
+                vis_flow_pyramid(flow_set, flow_gt_val, image_pair_val,
                                  f'./figure/flow_{str(e+1).zfill(4)}.pdf')
 
             if not os.path.exists('./model'):
@@ -201,8 +202,7 @@ if __name__ == '__main__':
     for key, item in vars(args).items():
         print(f'{key} : {item}')
 
-    # os.environ['CUDA_VISIBLE_DEVICES'] = input('Input utilize gpu-id (-1:cpu) : ')
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
+    os.environ['CUDA_VISIBLE_DEVICES'] = input('Input utilize gpu-id (-1:cpu) : ')
+    
     trainer = Trainer(args)
     trainer.train()
