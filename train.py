@@ -34,10 +34,14 @@ class Trainer(object):
             tset = pipe(train_or_val = 'train', **shared_args)
             titer = tset.make_one_shot_iterator()
             self.images, self.flows_gt = titer.get_next()
+            self.images.set_shape((None, 2, *tset.image_size, 3))
+            self.flows_gt.set_shape((None, *tset.image_size, 2))
             
             vset = pipe(train_or_val = 'val', **shared_args)
             viter, self.vinitializer = vset.make_initializable_iterator()
             self.images_v, self.flows_gt_v = viter.get_next()
+            self.images_v.set_shape((None, 2, *vset.image_size, 3))
+            self.flows_gt_v.set_shape((None, *vset.image_size, 2))
 
             self.num_batches = len(tset.samples)//self.args.batch_size
         
