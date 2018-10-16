@@ -87,7 +87,10 @@ class Trainer(object):
             print(f'Loading learned model from checkpoint {self.args.resume}')
             self.saver.restore(self.sess, self.args.resume)
         else:
-            self.sess.run(tf.global_variables_initializer())            
+            self.sess.run(tf.global_variables_initializer())
+
+        pdb.set_trace()
+        # tf.summary.FileWriter('./logs', graph = self.sess.graph)
                     
     def train(self):
         train_start = time.time()
