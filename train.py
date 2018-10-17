@@ -30,27 +30,31 @@ class Trainer(object):
         for key in shared_keys:
             shared_args[key] = getattr(self.args, key)
 
-        with tf.name_scope('IO'):
+        # Input data
+        with tf.name_scope('Data'):
             tset = pipe(train_or_val = 'train', **shared_args)
-            self.images, self.flows_gt = tset.get_element()
+            images, self.flows_gt = tset.get_element()
+            self.images = images/255.0
             
             vset = pipe(train_or_val = 'val', **shared_args)
-            self.images_v, self.flows_gt_v, self.initializer_v = vset.get_element()
+            images_v, self.flows_gt_v, self.initializer_v = vset.get_element()
+            self.images_v = images_v/255.0
 
             self.num_batches = len(tset.samples)//self.args.batch_size
             self.num_batches_v = len(vset.samples)//self.args.batch_size
-        
-        with tf.name_scope('Forward'):
-            model = PWCDCNet(num_levels = self.args.num_levels,
-                             search_range = self.args.search_range,
-                             warp_type = self.args.warp_type,
-                             use_dc = self.args.use_dc,
-                             output_level = self.args.output_level,
-                             name = 'pwcdcnet')
-            self.flows_final, self.flows = model(self.images[:,0], self.images[:,1])
-            self.flows_final_v, self.flows_v \
-                = model(self.images_v[:,0], self.images_v[:,1], reuse = True)
 
+        # Model inference
+        model = PWCDCNet(num_levels = self.args.num_levels,
+                         search_range = self.args.search_range,
+                         warp_type = self.args.warp_type,
+                         use_dc = self.args.use_dc,
+                         output_level = self.args.output_level,
+                         name = 'pwcdcnet')
+        self.flows_final, self.flows = model(self.images[:,0], self.images[:,1])
+        self.flows_final_v, self.flows_v \
+          = model(self.images_v[:,0], self.images_v[:,1], reuse = True)
+
+        # Loss calculation
         with tf.name_scope('Loss'):
             if self.args.loss == 'multiscale':
                 criterion = multiscale_loss
@@ -67,14 +71,14 @@ class Trainer(object):
             self.epe = EPE(self.flows_gt, self.flows_final)
             self.epe_v = EPE(self.flows_gt_v, self.flows_final_v)
 
+        # Gradient descent optimization
         with tf.name_scope('Optimize'):
+            self.global_step = tf.train.get_or_create_global_step()
             if self.args.lr_scheduling:
-                self.global_step = tf.train.get_or_create_global_step()
                 boundaries = [200000, 400000, 600000, 800000, 1000000]
                 values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
                 lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
             else:
-                self.global_step = tf.constant(0)
                 lr = self.args.lr
 
             self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
@@ -82,15 +86,13 @@ class Trainer(object):
             with tf.control_dependencies([self.optimizer]):
                 self.optimizer = tf.assign_add(self.global_step, 1)
             
-        self.saver = tf.train.Saver()
+        self.saver = tf.train.Saver(model.vars)
+        self.sess.run(tf.global_variables_initializer())
         if self.args.resume is not None:
             print(f'Loading learned model from checkpoint {self.args.resume}')
             self.saver.restore(self.sess, self.args.resume)
-        else:
-            self.sess.run(tf.global_variables_initializer())
 
-        pdb.set_trace()
-        # tf.summary.FileWriter('./logs', graph = self.sess.graph)
+        tf.summary.FileWriter('./logs', graph = self.sess.graph)
                     
     def train(self):
         train_start = time.time()
@@ -138,15 +140,15 @@ class Trainer(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type = str, default = 'SintelClean',
+    parser.add_argument('-d', '--dataset', type = str, default = 'SintelClean',
                         help = 'Target dataset, [SintelClean]')
-    parser.add_argument('--dataset_dir', type = str, required = True,
+    parser.add_argument('-dd', '--dataset_dir', type = str, required = True,
                         help = 'Directory containing target dataset')
-    parser.add_argument('--num_epochs', type = int, default = 100,
+    parser.add_argument('-e', '--num_epochs', type = int, default = 100,
                         help = '# of epochs [100]')
-    parser.add_argument('--batch_size', type = int, default = 4,
+    parser.add_argument('-b', '--batch_size', type = int, default = 4,
                         help = 'Batch size [4]')
-    parser.add_argument('--num_parallel_calls', type = int, default = 2,
+    parser.add_argument('-nc', '--num_parallel_calls', type = int, default = 2,
                         help = '# of parallel calls for data loading [2]')
 
     parser.add_argument('--crop_type', type = str, default = 'random',
@@ -194,7 +196,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-visualize', dest = 'visualize', action = 'store_false',
                         help = 'Disable estimated flow visualization, [enabled] as default')
     parser.set_defaults(visualize = True)
-    parser.add_argument('--resume', type = str, default = None,
+    parser.add_argument('-r', '--resume', type = str, default = None,
                         help = 'Learned parameter checkpoint file [None]')
     
     args = parser.parse_args()
