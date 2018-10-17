@@ -43,10 +43,7 @@ class FeaturePyramidExtractor_custom(object):
         - features_pyramid (batch, h_l, w_l, nch_l) for each scale levels:
           extracted feature pyramid (deep -> shallow order)
         """
-        with tf.variable_scope(self.name) as vs:
-            if reuse:
-                vs.reuse_variables()
-                
+        with tf.variable_scope(self.name, reuse = reuse) as vs:
             features_pyramid = []
             x = images
             for l in range(self.num_levels):
