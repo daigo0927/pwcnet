@@ -8,10 +8,10 @@ from torch.utils import data
 from functools import partial
 
 from datahandler.flow import get_dataset
-from pwcnet.model import PWCDCNet
-from pwcnet.losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
-from pwcnet.utils import show_progress
-from pwcnet.flow_utils import vis_flow_pyramid
+from model import PWCDCNet
+from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
+from utils import show_progress
+from flow_utils import vis_flow, vis_flow_pyramid
 
 
 class Trainer(object):
