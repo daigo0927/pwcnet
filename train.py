@@ -3,7 +3,7 @@ import argparse
 import time
 import tensorflow as tf
 import numpy as np
-import torch
+from datetime import datetime
 from torch.utils import data
 from functools import partial
 
@@ -72,7 +72,6 @@ class Trainer(object):
         # Gradient descent optimization
         with tf.name_scope('Optimize'):
             self.global_step = tf.train.get_or_create_global_step()
-            self.global_step_update = self.global_step.assign_add(1)
             if self.args.lr_scheduling:
                 boundaries = [200000, 400000, 600000, 800000, 1000000]
                 values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
@@ -82,6 +81,8 @@ class Trainer(object):
 
             self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
                              .minimize(self.loss, var_list = self.model.vars)
+            with tf.control_dependencies([self.optimizer]):
+                self.optimizer = tf.assign_add(self.global_step, 1)
 
         # Initialization
         self.saver = tf.train.Saver(self.model.vars)
@@ -90,7 +91,22 @@ class Trainer(object):
             print(f'Loading learned model from checkpoint {self.args.resume}')
             self.saver.restore(self.sess, self.args.resume)
 
-        tf.summary.FileWriter('./logs', graph = self.sess.graph)
+        # Create summary
+        # Specified loss and EPE
+        sum_loss = tf.summary.scalar(f'loss_{self.args.loss}', self.loss)
+        sum_epe = tf.summary.scalar('EPE', self.epe)
+        self.merged = tf.summary.merge([sum_loss, sum_epe])
+        # First convolution weights in each optical flow estimator modules
+        target_weights = [var for var in self.model.vars
+                          if 'optflow' in var.name and 'conv2d/' in var.name and not 'Adam' in var.name]
+        sum_weights = [tf.summary.histogram(w.name, w) for w in target_weights]
+        self.merged_plus = tf.summary.merge(sum_weights)
+        
+        logdir = 'logs/history_' + datetime.now().strftime('%Y-%m-%d-%H-%M')
+        self.twriter = tf.summary.FileWriter(logdir+'/train', graph = self.sess.graph)
+        self.vwriter = tf.summary.FileWriter(logdir+'/val', graph = self.sess.graph)
+
+        print(f'Graph building completed, histories are logged in {logdir}')
             
     def train(self):
         train_start = time.time()
@@ -100,40 +116,37 @@ class Trainer(object):
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
                 
-                time_s = time.time()
-                _, _, loss, epe = \
-                  self.sess.run([self.optimizer, self.global_step_update,
-                                 self.loss, self.epe],
-                                feed_dict = {self.images: images, self.flows_gt: flows_gt})
+                _ = self.sess.run(self.optimizer, feed_dict = {self.images: images,
+                                                               self.flows_gt: flows_gt})
 
-                if i%20 == 0:
-                    batch_time = time.time() - time_s
-                    kwargs = {'loss':loss, 'epe':epe, 'batch time':batch_time}
-                    show_progress(e+1, i+1, self.num_batches, **kwargs)
+                if i%30 == 0:
+                    summary, g_step = self.sess.run([self.merged, self.global_step],
+                                                    feed_dict = {self.images: images,
+                                                                 self.flows_gt: flows_gt})
+                    self.twriter.add_summary(summary, g_step)
 
             # Validation
-            loss_vals, epe_vals = [], []
             for images_val, flows_gt_val in self.vloader:
                 images_val = images_val.numpy()/255.0
                 flows_gt_val = flows_gt_val.numpy()
 
-                flows_val, loss_val, epe_val \
-                    = self.sess.run([self.flows, self.loss, self.epe],
+                summary, g_step = self.sess.run([self.merged, self.global_step],
                                     feed_dict = {self.images: images_val,
                                                  self.flows_gt: flows_gt_val})
-                loss_vals.append(loss_val)
-                epe_vals.append(epe_val)
+                self.vwriter.add_summary(summary, g_step)
+            # Collect convolution weights and biases
+            summary_plus = self.sess.run(self.merged_plus)
+            self.vwriter.add_summary(summary_plus, g_step)
                 
-            g_step = self.sess.run(self.global_step)
-            print(f'\r{e+1} epoch validation, loss: {np.mean(loss_vals)}, epe: {np.mean(epe_vals)}'\
-                  +f', global step: {g_step}, elapsed time: {time.time()-train_start} sec.')
-            
             # visualize estimated optical flow
             if self.args.visualize:
                 if not os.path.exists('./figure'):
                     os.mkdir('./figure')
                 # Estimated flow values are downscaled, rescale them compatible to the ground truth
                 flow_set = []
+                flows_val = self.sess.run(self.flows, feed_dict = {self.images: images_val,
+                                                                   self.flows_gt: flows_gt_val})
+
                 for l, flow in enumerate(flows_val):
                     upscale = 20/2**(self.args.num_levels-l)
                     flow_set.append(flow[0]*upscale)
@@ -145,6 +158,9 @@ class Trainer(object):
             if not os.path.exists('./model'):
                 os.mkdir('./model')
             self.saver.save(self.sess, f'./model/model_{e+1}.ckpt')
+
+        self.twriter.close()
+        self.vwriter.close()
         
 
 if __name__ == '__main__':
