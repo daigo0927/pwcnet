@@ -43,6 +43,7 @@ class Trainer(object):
         with tf.name_scope('Data'):
             self.images = tf.placeholder(tf.float32, shape = (self.args.batch_size, 2, *self.image_size, 3),
                                          name = 'images')
+            images_0, images_1 = tf.unstack(self.images, axis = 1)
             self.flows_gt = tf.placeholder(tf.float32, shape = (self.args.batch_size, *self.image_size, 2),
                                            name = 'flows')
 
@@ -53,7 +54,12 @@ class Trainer(object):
                               use_dc = self.args.use_dc,
                               output_level = self.args.output_level,
                               name = 'pwcdcnet')
-        self.flows_final, self.flows = self.model(self.images[:,0], self.images[:,1])
+        self.flows_final, self.flows = self.model(images_0, images_1)
+        # Collect variables to be observed
+        target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                           scope = 'pwcdcnet/fp_extractor')[::6]
+        target_weights += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                            scope = 'pwcdcnet/optflow')[::12]
 
         # Loss calculation
         with tf.name_scope('Loss'):
@@ -96,9 +102,7 @@ class Trainer(object):
         sum_loss = tf.summary.scalar(f'loss_{self.args.loss}', self.loss)
         sum_epe = tf.summary.scalar('EPE', self.epe)
         self.merged = tf.summary.merge([sum_loss, sum_epe])
-        # First convolution weights in each optical flow estimator modules
-        target_weights = [var for var in self.model.vars
-                          if 'optflow' in var.name and 'conv2d/' in var.name and not 'Adam' in var.name]
+        # Kernel weights in feature extractor and optical flow estimator
         sum_weights = [tf.summary.histogram(w.name, w) for w in target_weights]
         self.merged_plus = tf.summary.merge(sum_weights)
         
