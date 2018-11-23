@@ -3,14 +3,15 @@ import argparse
 import time
 import tensorflow as tf
 import numpy as np
-import torch
+from datetime import datetime
 from torch.utils import data
 from functools import partial
+from tqdm import tqdm
 
 from datahandler.flow import get_dataset
 from model import PWCDCNet
 from losses import L1loss, L2loss, EPE, multiscale_loss, multirobust_loss
-from utils import show_progress
+from utils import save_config, ExperimentSaver
 from flow_utils import vis_flow, vis_flow_pyramid
 
 
@@ -35,6 +36,7 @@ class Trainer(object):
         load_args = {'batch_size': self.args.batch_size, 'num_workers':self.args.num_workers,
                      'drop_last':True, 'pin_memory':True}
         self.num_batches = int(len(tset.samples)/self.args.batch_size)
+        print(f'Found {len(tset.samples)} samples -> {self.num_batches} mini-batches')
         self.tloader = data.DataLoader(tset, shuffle = True, **load_args)
         self.vloader = data.DataLoader(vset, shuffle = False, **load_args)
         
@@ -43,97 +45,114 @@ class Trainer(object):
         with tf.name_scope('Data'):
             self.images = tf.placeholder(tf.float32, shape = (self.args.batch_size, 2, *self.image_size, 3),
                                          name = 'images')
+            images_0, images_1 = tf.unstack(self.images, axis = 1)
             self.flows_gt = tf.placeholder(tf.float32, shape = (self.args.batch_size, *self.image_size, 2),
                                            name = 'flows')
 
         # Model inference via PWCNet
-        self.model = PWCDCNet(num_levels = self.args.num_levels,
-                              search_range = self.args.search_range,
-                              warp_type = self.args.warp_type,
-                              use_dc = self.args.use_dc,
-                              output_level = self.args.output_level,
-                              name = 'pwcdcnet')
-        self.flows_final, self.flows = self.model(self.images[:,0], self.images[:,1])
+        model = PWCDCNet(num_levels = self.args.num_levels,
+                         search_range = self.args.search_range,
+                         warp_type = self.args.warp_type,
+                         use_dc = self.args.use_dc,
+                         output_level = self.args.output_level,
+                         name = 'pwcdcnet')
+        flows_final, self.flows = model(images_0, images_1)
+        target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                           scope = 'pwcdcnet/fp_extractor')[::6]
+        target_weights += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                            scope = 'pwcdcnet/optflow')[::12]
 
         # Loss calculation
         with tf.name_scope('Loss'):
             if self.args.loss is 'multiscale':
-                self.criterion = multiscale_loss
+                criterion = multiscale_loss
             else:
-                self.criterion =\
+                criterion =\
                   partial(multirobust_loss, epsilon = self.args.epsilon, q = self.args.q)
             
-            _loss = self.criterion(self.flows_gt, self.flows, self.args.weights)
-            weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in self.model.vars])
-            self.loss = _loss + self.args.gamma*weights_l2
+            _loss = criterion(self.flows_gt, self.flows, self.args.weights)
+            weights_l2 = tf.reduce_sum([tf.nn.l2_loss(var) for var in model.vars])
+            loss = _loss + self.args.gamma*weights_l2
 
-            self.epe = EPE(self.flows_gt, self.flows_final)
+            epe = EPE(self.flows_gt, flows_final)
 
         # Gradient descent optimization
         with tf.name_scope('Optimize'):
             self.global_step = tf.train.get_or_create_global_step()
-            self.global_step_update = self.global_step.assign_add(1)
             if self.args.lr_scheduling:
-                boundaries = [200000, 400000, 600000, 800000, 1000000]
+                boundaries = [200000, 250000, 300000, 350000, 4000000]
                 values = [self.args.lr/(2**i) for i in range(len(boundaries)+1)]
                 lr = tf.train.piecewise_constant(self.global_step, boundaries, values)
             else:
                 lr = self.args.lr
 
             self.optimizer = tf.train.AdamOptimizer(learning_rate = lr)\
-                             .minimize(self.loss, var_list = self.model.vars)
+                             .minimize(loss, var_list = model.vars)
+            with tf.control_dependencies([self.optimizer]):
+                self.optimizer = tf.assign_add(self.global_step, 1)
 
         # Initialization
-        self.saver = tf.train.Saver(self.model.vars)
+        self.saver = tf.train.Saver(model.vars)
         self.sess.run(tf.global_variables_initializer())
         if self.args.resume is not None:
             print(f'Loading learned model from checkpoint {self.args.resume}')
             self.saver.restore(self.sess, self.args.resume)
 
-        tf.summary.FileWriter('./logs', graph = self.sess.graph)
+        # Summarize
+        # Original PWCNet loss
+        sum_loss = tf.summary.scalar('loss/pwc', loss)
+        # EPE for both domains
+        sum_epe = tf.summary.scalar('EPE/source', epe)
+        # Merge summaries
+        self.merged = tf.summary.merge([sum_loss, sum_epe])
+
+        logdir = 'logs/history_' + datetime.now().strftime('%Y-%m-%d-%H-%M')
+        self.twriter = tf.summary.FileWriter(logdir+'/train', graph = self.sess.graph)
+        self.vwriter = tf.summary.FileWriter(logdir+'/val', graph = self.sess.graph)
+
+        self.exp_saver = ExperimentSaver(logdir = logdir, parse_args = self.args)
+
+        print(f'Graph building completed, histories are logged in {logdir}')
+
             
     def train(self):
-        train_start = time.time()
-        for e in range(self.args.num_epochs):
+        for e in tqdm(range(self.args.num_epochs)):
             # Training
-            for i, (images, flows_gt) in enumerate(self.tloader):
+            for images, flows_gt in self.tloader:
                 images = images.numpy()/255.0
                 flows_gt = flows_gt.numpy()
-                
-                time_s = time.time()
-                _, _, loss, epe = \
-                  self.sess.run([self.optimizer, self.global_step_update,
-                                 self.loss, self.epe],
-                                feed_dict = {self.images: images, self.flows_gt: flows_gt})
 
-                if i%20 == 0:
-                    batch_time = time.time() - time_s
-                    kwargs = {'loss':loss, 'epe':epe, 'batch time':batch_time}
-                    show_progress(e+1, i+1, self.num_batches, **kwargs)
+                _, g_step = self.sess.run([self.optimizer, self.global_step],
+                                          feed_dict = {self.images: images,
+                                                       self.flows_gt: flows_gt})
+
+                if g_step%1000 == 0:
+                    summary = self.sess.run(self.merged,
+                                            feed_dict = {self.images: images,
+                                                         self.flows_gt: flows_gt})
+                    self.twriter.add_summary(summary, g_step)
 
             # Validation
-            loss_vals, epe_vals = [], []
             for images_val, flows_gt_val in self.vloader:
                 images_val = images_val.numpy()/255.0
                 flows_gt_val = flows_gt_val.numpy()
 
-                flows_val, loss_val, epe_val \
-                    = self.sess.run([self.flows, self.loss, self.epe],
-                                    feed_dict = {self.images: images_val,
-                                                 self.flows_gt: flows_gt_val})
-                loss_vals.append(loss_val)
-                epe_vals.append(epe_val)
-                
-            g_step = self.sess.run(self.global_step)
-            print(f'\r{e+1} epoch validation, loss: {np.mean(loss_vals)}, epe: {np.mean(epe_vals)}'\
-                  +f', global step: {g_step}, elapsed time: {time.time()-train_start} sec.')
-            
+                summary = self.sess.run(self.merged,
+                                        feed_dict = {self.images: images_val,
+                                                     self.flows_gt: flows_gt_val})
+                self.vwriter.add_summary(summary, g_step)
+            # Collect convolution weights and biases
+            # summary_plus = self.sess.run(self.merged_plus)
+            # self.vwriter.add_summary(summary_plus, g_step)
+
             # visualize estimated optical flow
             if self.args.visualize:
                 if not os.path.exists('./figure'):
                     os.mkdir('./figure')
                 # Estimated flow values are downscaled, rescale them compatible to the ground truth
                 flow_set = []
+                flows_val = self.sess.run(self.flows, feed_dict = {self.images: images_val,
+                                                                   self.flows_gt: flows_gt_val})
                 for l, flow in enumerate(flows_val):
                     upscale = 20/2**(self.args.num_levels-l)
                     flow_set.append(flow[0]*upscale)
@@ -145,6 +164,12 @@ class Trainer(object):
             if not os.path.exists('./model'):
                 os.mkdir('./model')
             self.saver.save(self.sess, f'./model/model_{e+1}.ckpt')
+
+        
+        self.twriter.close()
+        self.vwriter.close()
+        self.exp_saver.append(['./figure', './model'])
+        self.exp_saver.save()
         
 
 if __name__ == '__main__':
