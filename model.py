@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from modules import *
+from .modules import *
 
 
 class PWCNet(object):
@@ -92,7 +92,7 @@ class PWCDCNet(object):
         # Upscale factors from deep -> shallow level
         self.scales = [None, 0.625, 1.25, 2.5, 5.0, 10., 20.]
 
-    def __call__(self, images_0, images_1, reuse = False):
+    def __call__(self, images_0, images_1, with_features = False, reuse = False):
         with tf.variable_scope(self.name, reuse = reuse) as vs:
             pyramid_0 = self.fp_extractor(images_0, reuse = reuse)
             pyramid_1 = self.fp_extractor(images_1)
@@ -125,7 +125,11 @@ class PWCDCNet(object):
                     upscale = 2**(self.num_levels-self.output_level)
                     _, h, w, _ = tf.unstack(tf.shape(flows))
                     flows_final = tf.image.resize_bilinear(flows, (h*upscale, w*upscale))*20.
-                    return flows_final, flows_pyramid
+
+                    if with_features:
+                        return flows_final, flows_pyramid, pyramid_0
+                    else:
+                        return flows_final, flows_pyramid
 
                 flows_pyramid.append(flows)
 
