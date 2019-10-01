@@ -102,6 +102,9 @@ class Transform:
                  random_scale=None,
                  crop_shape=None,
                  horizontal_flip=False):
+        if random_scale is not None and original_size is None:
+            raise ValueError('random_scale should be specified with original_size')
+            
         self.original_size = original_size
         self.random_scale = random_scale
         self.crop_shape = crop_shape
@@ -110,22 +113,23 @@ class Transform:
     def __call__(self, image1, image2, flow):
 
         if self.random_scale:
-            scale = random.uniform(self.random_scale, 1)
+            scale = tf.random.uniform([], self.random_scale, 1)
             h, w = self.original_size
-            hnew, wnew = int(scale*h), int(scale*w)
-            image1 = tf.image.resize_with_pad(image1, hnew, wnew)
-            image2 = tf.image.resize_with_pad(image2, hnew, wnew)
-            flow = scale*tf.image.resize_with_pad(flow, hnew, wnew)
+            hnew, wnew = tf.cast(scale*h, tf.int32), tf.cast(scale*w, tf.int32)
+            x = tf.concat([image1, image2, flow], axis=-1)
+            x = tf.image.random_crop(x, [hnew, wnew, 8])
+            x = tf.image.resize_with_pad(x, h, w)
+            image1, image2, flow = tf.split(x, [3, 3, 2], axis=-1)
+            flow *= scale
 
         if self.crop_shape:
             x = tf.concat([image1, image2, flow], axis=-1)
             x = tf.image.random_crop(x, [*self.crop_shape, 8])
             image1, image2, flow = tf.split(x, [3, 3, 2], axis=-1)
 
-        hflip = random.random() if self.horizontal_flip else 0
-        if hflip > 0.5:
+        if self.horizontal_flip:
             x = tf.concat([image1, image2, flow], axis=-1)
-            x = tf.image.flip_left_right(x)
+            x = tf.image.random_flip_left_right(x)
             image1, image2, fx, fy = tf.split(x, [3, 3, 1, 1], axis=-1)
             flow = tf.concat([-1*fx, fy], axis=-1)
 

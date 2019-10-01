@@ -1,5 +1,5 @@
 import tensorflow as tf
-from . import ops
+import ops
 from tensorflow.keras import layers
 
 
