@@ -3,6 +3,7 @@ from datetime import datetime
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
+import tempfile
 
 from datasets import MPISintel, Preprocess, Transform
 from model import PWCNet
@@ -11,6 +12,17 @@ from utils import vis_flow, prepare_parser
 
 
 def train(args):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if args.debug:
+            logdir = tmpdir
+        else:
+            if not os.path.exists('logs'):
+                os.mkdir('logs')
+            logdir = f'logs/{datetime.now().strftime("%Y-%m-%dT%H:%M")}'
+        _train(args, logdir)
+
+
+def _train(args, logdir):
     preprocess = Preprocess()
     transform = Transform(original_size=(436, 1024),
                           random_scale=args.random_scale,
@@ -51,11 +63,7 @@ def train(args):
                    'flows_pred': flows_pre}
         return outputs
 
-    if not args.debug:
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
-        logdir = f'logs/{datetime.now().strftime("%Y-%m-%dT%H:%M")}'
-        summary_writer = tf.summary.create_file_writer(logdir)
+    summary_writer = tf.summary.create_file_writer(logdir)
 
     n_batches = np.ceil(len(dataset)*(1-args.validation_split)/args.batch_size)
     for e in tqdm(range(args.epochs)):
