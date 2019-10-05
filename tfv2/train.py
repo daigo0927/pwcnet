@@ -29,9 +29,7 @@ def main():
 
 def train(args, logdir):
     preprocess = Preprocess()
-    transform = Transform(original_size=(436, 1024),
-                          random_scale=args.random_scale,
-                          crop_shape=args.crop_shape,
+    transform = Transform(crop_shape=args.crop_shape,
                           horizontal_flip=args.horizontal_flip)
     
     dataset = MPISintel(dataset_dir=args.dataset_dir,
@@ -71,8 +69,8 @@ def train(args, logdir):
     summary_writer = tf.summary.create_file_writer(logdir)
 
     n_batches = np.ceil(len(dataset)*(1-args.validation_split)/args.batch_size)
-    for e in tqdm(range(args.epochs)):
-        for i, (images1, images2, flows_true) in enumerate(dataset.train_loader):
+    for e in range(args.epochs):
+        for i, (images1, images2, flows_true) in enumerate(tqdm(dataset.train_loader)):
             tout = train_step(images1, images2, flows_true)
 
         for i, (images1, images2, flows_true) in enumerate(dataset.val_loader):

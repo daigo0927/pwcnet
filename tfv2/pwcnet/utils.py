@@ -171,8 +171,6 @@ def prepare_parser():
     parser.add_argument('--debug', action='store_true',
                         help='Debug execution')
     # Data pipeline configs
-    parser.add_argument('--random_scale', type=float, default=0.8,
-                        help='Random scale [0.8]')
     parser.add_argument('--crop_shape', nargs=2, type=int, default=[384, 448],
                         help='Crop shape for images. [384, 448]')
     parser.add_argument('-hflip', '--horizontal_flip', action='store_true',

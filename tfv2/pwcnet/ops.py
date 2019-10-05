@@ -131,18 +131,13 @@ class OpticalFlowEstimator(layers.Layer):
         super().__init__(name=name)
         self.upsample = upsample
 
-        self.block = tf.keras.Sequential([
-            layers.Conv2D(128, (3, 3), (1, 1), 'same', name='conv1'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D(128, (3, 3), (1, 1), 'same', name='conv2'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D( 96, (3, 3), (1, 1), 'same', name='conv3'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D( 64, (3, 3), (1, 1), 'same', name='conv4'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D( 32, (3, 3), (1, 1), 'same', name='conv5'),
-            layers.LeakyReLU(0.1)
-        ])
+        self.conv1 = layers.Conv2D(128, (3, 3), (1, 1), 'same', name='conv1')
+        self.conv2 = layers.Conv2D(128, (3, 3), (1, 1), 'same', name='conv2')
+        self.conv3 = layers.Conv2D( 96, (3, 3), (1, 1), 'same', name='conv3')
+        self.conv4 = layers.Conv2D( 64, (3, 3), (1, 1), 'same', name='conv4')
+        self.conv5 = layers.Conv2D( 32, (3, 3), (1, 1), 'same', name='conv5')
+        self.act = layers.LeakyReLU(0.1)
+
         self.toflow = layers.Conv2D(2, (3, 3), (1, 1), 'same', name='toflow')
 
         if upsample:
@@ -154,8 +149,12 @@ class OpticalFlowEstimator(layers.Layer):
     def call(self, cv, x1=None, upflow=None, upfeat=None):
         x = [f for f in [cv, x1, upflow, upfeat] if f is not None]
         x = tf.concat(x, axis=3)
-        
-        x = self.block(x)
+
+        x = self.act(self.conv1(x))
+        x = self.act(self.conv2(x))
+        x = self.act(self.conv3(x))
+        x = self.act(self.conv4(x))
+        x = self.act(self.conv5(x))
         flow = self.toflow(x)
         
         if upflow is not None:
@@ -172,29 +171,29 @@ class OpticalFlowEstimator(layers.Layer):
 class ContextNetwork(layers.Layer):
     def __init__(self, name='context'):
         super().__init__(name=name)
-        
-        self.block = tf.keras.Sequential([
-            layers.Conv2D(128, (3, 3), (1, 1), 'same',
-                          dilation_rate=(1, 1), name='conv1'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D(128, (3, 3), (1, 1), 'same',
-                          dilation_rate=(2, 2), name='conv2'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D(128, (3, 3), (1, 1), 'same',
-                          dilation_rate=(4, 4), name='conv3'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D( 96, (3, 3), (1, 1), 'same',
-                          dilation_rate=(8, 8), name='conv4'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D( 64, (3, 3), (1, 1), 'same',
-                          dilation_rate=(16, 16), name='conv5'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D( 32, (3, 3), (1, 1), 'same',
-                          dilation_rate=(1, 1), name='conv6'),
-            layers.LeakyReLU(0.1),
-            layers.Conv2D(  2, (3, 3), (1, 1), 'same',
-                          dilation_rate=(1, 1), name='conv7')
-      ])
+
+        self.conv1 = layers.Conv2D(128, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(1, 1), name='conv1')
+        self.conv2 = layers.Conv2D(128, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(2, 2), name='conv2')
+        self.conv3 = layers.Conv2D(128, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(4, 4), name='conv3')
+        self.conv4 = layers.Conv2D( 96, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(8, 8), name='conv4')
+        self.conv5 = layers.Conv2D( 64, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(16, 16), name='conv5')
+        self.conv6 = layers.Conv2D( 32, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(1, 1), name='conv6')
+        self.conv7 = layers.Conv2D(  2, (3, 3), (1, 1), 'same',
+                                   dilation_rate=(1, 1), name='conv7')
+        self.act = layers.LeakyReLU(0.1)
 
     def call(self, flow, x):
-        return flow + self.block(x)
+        x = self.act(self.conv1(x))
+        x = self.act(self.conv2(x))
+        x = self.act(self.conv3(x))
+        x = self.act(self.conv4(x))
+        x = self.act(self.conv5(x))
+        x = self.act(self.conv6(x))
+        x = self.act(self.conv7(x))
+        return flow + x

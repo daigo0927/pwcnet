@@ -98,30 +98,13 @@ class Preprocess:
         
 class Transform:
     def __init__(self,
-                 original_size=None,
-                 random_scale=None,
                  crop_shape=None,
                  horizontal_flip=False):
-        if random_scale is not None and original_size is None:
-            raise ValueError('random_scale should be specified with original_size')
-            
-        self.original_size = original_size
-        self.random_scale = random_scale
         self.crop_shape = crop_shape
         self.horizontal_flip = horizontal_flip
 
     def __call__(self, image1, image2, flow):
-
-        if self.random_scale:
-            scale = tf.random.uniform([], self.random_scale, 1)
-            h, w = self.original_size
-            hnew, wnew = tf.cast(scale*h, tf.int32), tf.cast(scale*w, tf.int32)
-            x = tf.concat([image1, image2, flow], axis=-1)
-            x = tf.image.random_crop(x, [hnew, wnew, 8])
-            x = tf.image.resize_with_pad(x, h, w)
-            image1, image2, flow = tf.split(x, [3, 3, 2], axis=-1)
-            flow *= scale
-
+        
         if self.crop_shape:
             x = tf.concat([image1, image2, flow], axis=-1)
             x = tf.image.random_crop(x, [*self.crop_shape, 8])
