@@ -5,13 +5,18 @@ import tensorflow as tf
 from tqdm import tqdm
 import tempfile
 
-from datasets import MPISintel, Preprocess, Transform
-from model import PWCNet
-from losses import multiscale_loss, end_point_error
-from utils import vis_flow, prepare_parser
+from pwcnet.datasets import MPISintel, Preprocess, Transform
+from pwcnet.model import PWCNet
+from pwcnet.losses import multiscale_loss, end_point_error
+from pwcnet.utils import vis_flow, prepare_parser
 
 
-def train(args):
+def main():
+    parser = prepare_parser()
+    args = parser.parse_args()
+    for k, v in vars(args).items():
+        print(f'{k}: {v}')
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         if args.debug:
             logdir = tmpdir
@@ -19,10 +24,10 @@ def train(args):
             if not os.path.exists('logs'):
                 os.mkdir('logs')
             logdir = f'logs/{datetime.now().strftime("%Y-%m-%dT%H:%M")}'
-        _train(args, logdir)
+        train(args, logdir)
 
 
-def _train(args, logdir):
+def train(args, logdir):
     preprocess = Preprocess()
     transform = Transform(original_size=(436, 1024),
                           random_scale=args.random_scale,
@@ -85,9 +90,4 @@ def _train(args, logdir):
 
 
 if __name__ == '__main__':
-    parser = prepare_parser()
-    args = parser.parse_args()
-    for k, v in vars(args).items():
-        print(f'{k}: {v}')
-
-    train(args)
+    main()
