@@ -2,6 +2,7 @@ import json
 import sys
 import shutil
 import numpy as np
+import tensorflow as tf
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -152,6 +153,14 @@ def vis_flow(flow):
     return img[:,:,[2,1,0]]
 
 
+def vis_flow_tf(flows):
+    results = []
+    for flow in tf.unstack(flows, axis=0):
+        flow_img = tf.numpy_function(vis_flow, [flow], tf.uint8)
+        results.append(flow_img)
+    return tf.stack(results, axis=0)
+
+
 def prepare_parser():
     parser = ArgumentParser(description='Training config')
     # Dataset
@@ -166,11 +175,16 @@ def prepare_parser():
                         help='Number of epochs [100]')
     parser.add_argument('-b', '--batch_size', type=int, default=16,
                         help='Batch size [16]')
-    parser.add_argument('-v', '--validation_split', type=float, default=0.1,
+    parser.add_argument('--validation_split', type=float, default=0.1,
                         help='Validtion split ratio [0.1]')
+    parser.add_argument('--validation_step', type=int, default=1,
+                        help='Validtion step [1]')
     parser.add_argument('--debug', action='store_true',
                         help='Debug execution')
     # Data pipeline configs
+    parser.add_argument('--base_shape', nargs=2, type=int, default=[448, 1024],
+                        help='Base shape for images. [448, 1024]')
+
     parser.add_argument('--crop_shape', nargs=2, type=int, default=[384, 448],
                         help='Crop shape for images. [384, 448]')
     parser.add_argument('-hflip', '--horizontal_flip', action='store_true',

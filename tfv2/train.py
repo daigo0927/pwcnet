@@ -8,7 +8,7 @@ import tempfile
 from pwcnet.datasets import MPISintel, Preprocess, Transform
 from pwcnet.model import PWCNet
 from pwcnet.losses import multiscale_loss, end_point_error
-from pwcnet.utils import vis_flow, prepare_parser
+from pwcnet.utils import vis_flow_tf, prepare_parser
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
 
 
 def train(args, logdir):
-    preprocess = Preprocess()
+    preprocess = Preprocess(base_shape=args.base_shape)
     transform = Transform(crop_shape=args.crop_shape,
                           horizontal_flip=args.horizontal_flip)
     
@@ -63,27 +63,31 @@ def train(args, logdir):
         epe = end_point_error(flows_true, flows_pred)
         outputs = {'epe': epe,
                    'flows_true': flows_true,
-                   'flows_pred': flows_pre}
+                   'flows_pred': flows_pred}
         return outputs
 
     summary_writer = tf.summary.create_file_writer(logdir)
 
     n_batches = np.ceil(len(dataset)*(1-args.validation_split)/args.batch_size)
-    for e in range(args.epochs):
-        for i, (images1, images2, flows_true) in enumerate(tqdm(dataset.train_loader)):
+    for e in tqdm(range(args.epochs)):
+        for i, (images1, images2, flows_true) in enumerate(dataset.train_loader):
             tout = train_step(images1, images2, flows_true)
 
+        if e%args.validation_step > 0:
+            continue
+
         for i, (images1, images2, flows_true) in enumerate(dataset.val_loader):
-            vout = train_step(images1, images2, flows_true)
+            vout = val_step(images1, images2, flows_true)
 
         with summary_writer.as_default():
+            tf.summary.experimental.set_step(e+1)
             tf.summary.scalar('train/loss', tout['loss'])
             tf.summary.scalar('train/epe', tout['epe'])
             tf.summary.scalar('val/epe', vout['epe'])
-            ftrue_img = tf.numpy_function(vis_flow, [vout['flows_true'][0]], tf.uint8)
-            fpred_img = tf.numpy_function(vis_flow, [vout['flows_pred'][0]], tf.uint8)
-            tf.summary.image('val/flow_true', ftrue_img)
-            tf.summary.image('val/flow_pred', fpred_img)
+            flows_true_img = vis_flow_tf(vout['flows_true'])
+            flows_pred_img = vis_flow_tf(vout['flows_pred'])
+            tf.summary.image('val/flow_true', flows_true_img)
+            tf.summary.image('val/flow_pred', flows_pred_img)
             summary_writer.flush()
 
 

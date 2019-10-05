@@ -72,25 +72,29 @@ class Base(metaclass=ABCMeta):
               .map(self.read, tf.data.experimental.AUTOTUNE)\
               .map(self.preprocess, tf.data.experimental.AUTOTUNE)\
               .prefetch(self.batch_size)\
-              .batch(self.batch_size)
+              .batch(1)
         else:
             self.test_loader = tf.data.Dataset.from_tensor_slices(self.samples)\
               .map(self.read, tf.data.experimental.AUTOTUNE)\
               .map(self.preprocess, tf.data.experimental.AUTOTUNE)\
               .prefetch(self.batch_size)\
-              .batch(self.batch_size)
+              .batch(1)
 
 
 class Preprocess:
-    def __init__(self):
-        pass
+    def __init__(self, base_shape):
+        self.base_shape = base_shape
 
     def __call__(self, image1, image2, flow=None):
         image1 = tf.cast(image1, tf.float32)
         image2 = tf.cast(image2, tf.float32)
         image1 /= 255.0
         image2 /= 255.0
+        image1 = tf.image.pad_to_bounding_box(image1, 0, 0, *self.base_shape)
+        image2 = tf.image.pad_to_bounding_box(image2, 0, 0, *self.base_shape)
         if flow is not None:
+            flow = tf.image.pad_to_bounding_box(flow, 0, 0, *self.base_shape)
+
             return image1, image2, flow
         else:
             return image1, image2
