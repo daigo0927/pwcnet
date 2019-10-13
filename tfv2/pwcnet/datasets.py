@@ -53,9 +53,9 @@ class Base(metaclass=ABCMeta):
             _, w, h = tf.unstack(tf.io.decode_raw(flow_byte, tf.int32, fixed_length=12))
             flow_raw = tf.io.decode_raw(flow_byte, tf.float32)[3:]
             flow = tf.reshape(flow_raw, (h, w, 2))
-            return image1, image2, flow
+            return (image1, image2), flow
         else:
-            return image1, image2
+            return (image1, image2)
 
     def _build(self):
         if self.train_or_test == 'train':
@@ -85,7 +85,8 @@ class Preprocess:
     def __init__(self, base_shape):
         self.base_shape = base_shape
 
-    def __call__(self, image1, image2, flow=None):
+    def __call__(self, images, flow=None):
+        image1, image2 = images
         image1 = tf.cast(image1, tf.float32)
         image2 = tf.cast(image2, tf.float32)
         image1 /= 255.0
@@ -95,9 +96,9 @@ class Preprocess:
         if flow is not None:
             flow = tf.image.pad_to_bounding_box(flow, 0, 0, *self.base_shape)
 
-            return image1, image2, flow
+            return (image1, image2), flow
         else:
-            return image1, image2
+            return (image1, image2)
 
         
 class Transform:
@@ -107,7 +108,8 @@ class Transform:
         self.crop_shape = crop_shape
         self.horizontal_flip = horizontal_flip
 
-    def __call__(self, image1, image2, flow):
+    def __call__(self, images, flow):
+        image1, image2 = images
         
         if self.crop_shape:
             x = tf.concat([image1, image2, flow], axis=-1)
@@ -120,7 +122,7 @@ class Transform:
             image1, image2, fx, fy = tf.split(x, [3, 3, 1, 1], axis=-1)
             flow = tf.concat([-1*fx, fy], axis=-1)
 
-        return image1, image2, flow
+        return (image1, image2), flow
 
 
 def window(seq, n = 2):

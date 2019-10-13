@@ -111,7 +111,8 @@ class CostVolume(layers.Layer):
         self.max_displacement = max_displacement
         self.act = layers.LeakyReLU(0.1)
 
-    def call(self, x1, warped):
+    def call(self, inputs):
+        x1, warped = inputs
         md = self.max_displacement
         
         cv = []
@@ -146,9 +147,9 @@ class OpticalFlowEstimator(layers.Layer):
             self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same',
                                                  name='upfeat')
 
-    def call(self, cv, x1=None, upflow=None, upfeat=None):
-        x = [f for f in [cv, x1, upflow, upfeat] if f is not None]
-        x = tf.concat(x, axis=3)
+    # def call(self, cv, x1=None, upflow=None, upfeat=None):
+    def call(self, inputs):
+        x = tf.concat(inputs, axis=3)
 
         x = self.act(self.conv1(x))
         x = self.act(self.conv2(x))
@@ -157,7 +158,8 @@ class OpticalFlowEstimator(layers.Layer):
         x = self.act(self.conv5(x))
         flow = self.toflow(x)
         
-        if upflow is not None:
+        if len(inputs) > 2:
+            _, _, upflow, _ = inputs
             flow += upflow
 
         if self.upsample:
@@ -188,7 +190,8 @@ class ContextNetwork(layers.Layer):
                                    dilation_rate=(1, 1), name='conv7')
         self.act = layers.LeakyReLU(0.1)
 
-    def call(self, flow, x):
+    def call(self, inputs):
+        flow, x = inputs
         x = self.act(self.conv1(x))
         x = self.act(self.conv2(x))
         x = self.act(self.conv3(x))

@@ -45,9 +45,9 @@ def train(args, logdir):
     optimizer = tf.keras.optimizers.Adam(lr=args.learning_rate)
 
     @tf.function
-    def train_step(images1, images2, flows_true):
+    def train_step(images, flows_true):
         with tf.GradientTape() as tape:
-            flows_pred, flows_pred_list = model(images1, images2)
+            flows_pred, flows_pred_list = model(images)
             loss = multiscale_loss(flows_true, flows_pred_list)
             l2decay = tf.reduce_sum([tf.nn.l2_loss(w) for w in model.trainable_weights])
             loss += args.gamma * l2decay
@@ -70,8 +70,8 @@ def train(args, logdir):
 
     n_batches = np.ceil(len(dataset)*(1-args.validation_split)/args.batch_size)
     for e in tqdm(range(args.epochs)):
-        for i, (images1, images2, flows_true) in enumerate(dataset.train_loader):
-            tout = train_step(images1, images2, flows_true)
+        for i, (images, flows_true) in enumerate(dataset.train_loader):
+            tout = train_step(images, flows_true)
 
         if e%args.validation_step > 0:
             continue
