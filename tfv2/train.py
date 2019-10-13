@@ -58,8 +58,8 @@ def train(args, logdir):
         return outputs
 
     @tf.function
-    def val_step(images1, images2, flows_true):
-        flows_pred, _ = model(images1, images2)
+    def val_step(images, flows_true):
+        flows_pred, _ = model(images)
         epe = end_point_error(flows_true, flows_pred)
         outputs = {'epe': epe,
                    'flows_true': flows_true,
@@ -76,14 +76,17 @@ def train(args, logdir):
         if e%args.validation_step > 0:
             continue
 
-        for i, (images1, images2, flows_true) in enumerate(dataset.val_loader):
-            vout = val_step(images1, images2, flows_true)
+        vepe = 0
+        for i, (images, flows_true) in enumerate(dataset.val_loader):
+            vout = val_step(images, flows_true)
+            vepe += vout['epe']
+        vepe /= (i+1)
 
         with summary_writer.as_default():
             tf.summary.experimental.set_step(e+1)
             tf.summary.scalar('train/loss', tout['loss'])
             tf.summary.scalar('train/epe', tout['epe'])
-            tf.summary.scalar('val/epe', vout['epe'])
+            tf.summary.scalar('val/epe', vepe)
             flows_true_img = vis_flow_tf(vout['flows_true'])
             flows_pred_img = vis_flow_tf(vout['flows_pred'])
             tf.summary.image('val/flow_true', flows_true_img)
