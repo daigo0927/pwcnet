@@ -140,3 +140,70 @@ def flow_to_color(flow_uv, clip_flow=None, convert_to_bgr=False):
     v = v / (rad_max + epsilon)
 
     return flow_compute_color(u, v, convert_to_bgr)
+
+
+# -------------- Additional functions ----------------------
+# MIT License
+#
+# Copyright (c) 2020 Daigo Hirooka
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to conditions.
+#
+# Author: Daigo Hirooka
+# Date Created: 2020-03-08
+
+import matplotlib.pyplot as plt
+
+
+def flow_to_quiver(flow):
+    """ Function to convert a flow to quivers.
+
+    Args:
+      flow: np.ndarray, target flow to visualization.
+
+    Returns:
+      Argument components for plt.quiver()
+
+    # Example
+
+    >>> fig, ax = plt.subplots(1, 1)
+    >>> flow_quiver = flow_to_quiver(flow)
+    >>> ax.quiver(*flow_quiver, angles='xy)
+    >>> ax.set_ylim(ax.get_ylim()[::-1]) # set top-left as the origin
+    >>> plt.show()
+    """
+    h, w, _ = flow.shape
+    gy, gx = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+    vx = flow[:, :, 0]
+    vy = flow[:, :, 1]
+    return (gx, gy, vx, vy)
+
+
+def show_image_and_flow(image1, image2, flow, figsize=(14, 4)):
+    """ Visualize triplet input (image1, image2, flow)
+    
+    Args:
+      image1, image2, flow: np.ndarray of input components.
+      figsize: A tuple or list to specify the figure size.
+    """
+    fig = plt.figure(figsize=figsize)
+    ax1 = fig.add_subplot(131)
+    ax1.set_title('Image1: pre-warp')
+    ax1.imshow(image1)
+
+    ax2 = fig.add_subplot(132)
+    ax2.set_title('Image2: post-warp')
+    ax2.imshow(image2)
+
+    flow_quiver = flow_to_quiver(flow)
+    ax3 = fig.add_subplot(133)
+    ax3.set_title('Flow: image1 -> image2')
+    ax3.quiver(*flow_quiver, angles='xy')
+    ax3.set_ylim(ax3.get_ylim()[::-1])
+
+    plt.show()

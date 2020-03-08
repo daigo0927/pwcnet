@@ -102,7 +102,7 @@ def random_crop(image1, image2, flow, target_size):
 
 def hflip(image1, image2, flow):
     inputs = tf.concat([image1, image2, flow], axis=-1)
-    inputs = tf.image.random_flip_left_right(inputs)
+    inputs = tf.reverse(inputs, axis=[1])
     image1, image2, fx, fy = tf.split(inputs, [3, 3, 1, 1], axis=-1)
     flow = tf.concat([-1*fx, fy], axis=-1)
     return [image1, image2, flow]
@@ -118,7 +118,7 @@ def random_horizontal_flip(image1, image2, flow):
 
 def vflip(image1, image2, flow):
     inputs = tf.concat([image1, image2, flow], axis=-1)
-    inputs = tf.image.random_flip_up_down(inputs)
+    inputs = tf.reverse(inputs, axis=[0])
     image1, image2, fx, fy = tf.split(inputs, [3, 3, 1, 1], axis=-1)
     flow = tf.concat([fx, -1*fy], axis=-1)
     return [image1, image2, flow]
