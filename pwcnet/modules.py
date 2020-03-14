@@ -100,15 +100,9 @@ class ConvBlock(layers.Layer):
         self.filters = filters
         self.rate = rate
 
-    def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(filters=self.filters,
-                                    kernel_size=(3, 3),
-                                    strides=(2, 2),
-                                    padding='same')
-        self.conv_2 = layers.Conv2D(filters=self.filters,
-                                    kernel_size=(3, 3),
-                                    strides=(1, 1),
-                                    padding='same')
+        # def build(self, input_shape):
+        self.conv_1 = layers.Conv2D(self.filters, 3, 2, 'same')
+        self.conv_2 = layers.Conv2D(self.filters, 3, 1, 'same')
 
     def call(self, inputs):
         x = self.conv_1(inputs)
@@ -124,14 +118,14 @@ class FlowBlock(layers.Layer):
         self.rate = rate
 
     def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(128, (3, 3), (1, 1), 'same')
-        self.conv_2 = layers.Conv2D(128, (3, 3), (1, 1), 'same')
-        self.conv_3 = layers.Conv2D(96, (3, 3), (1, 1), 'same')
-        self.conv_4 = layers.Conv2D(64, (3, 3), (1, 1), 'same')
-        self.conv_5 = layers.Conv2D(32, (3, 3), (1, 1), 'same')
-        self.conv_f = layers.Conv2D(2, (3, 3), (1, 1), 'same')
-        self.deconv = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
-        self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
+        self.conv_1 = layers.Conv2D(128, 3, 1, 'same')
+        self.conv_2 = layers.Conv2D(128, 3, 1, 'same')
+        self.conv_3 = layers.Conv2D(96, 3, 1, 'same')
+        self.conv_4 = layers.Conv2D(64, 3, 1, 'same')
+        self.conv_5 = layers.Conv2D(32, 3, 1, 'same')
+        self.conv_f = layers.Conv2D(2, 3, 1, 'same')
+        self.deconv = layers.Conv2DTranspose(2, 4, 2, 'same')
+        self.upfeat = layers.Conv2DTranspose(2, 4, 2, 'same')
 
     def call(self, inputs):
         x = tf.concat(inputs, axis=-1)
@@ -157,25 +151,13 @@ class ContextBlock(layers.Layer):
         self.rate = rate
 
     def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(128, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(1, 1))
-        self.conv_2 = layers.Conv2D(128, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(2, 2))
-        self.conv_3 = layers.Conv2D(128, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(4, 4))
-        self.conv_4 = layers.Conv2D(96, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(8, 8))
-        self.conv_5 = layers.Conv2D(64, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(16, 16))
-        self.conv_6 = layers.Conv2D(32, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(1, 1))
-        self.conv_f = layers.Conv2D(2, (3, 3), (1, 1), 'same')
+        self.conv_1 = layers.Conv2D(128, 3, 1, 'same', delation_rate=1)
+        self.conv_2 = layers.Conv2D(128, 3, 1, 'same', delation_rate=2)
+        self.conv_3 = layers.Conv2D(128, 3, 1, 'same', delation_rate=4)
+        self.conv_4 = layers.Conv2D(96, 3, 1, 'same', delation_rate=8)
+        self.conv_5 = layers.Conv2D(64, 3, 1, 'same', delation_rate=16)
+        self.conv_6 = layers.Conv2D(32, 3, 1, 'same', delation_rate=1)
+        self.conv_f = layers.Conv2D(2, 3, 1, 'same')
 
     def call(self, inputs):
         x = self.conv_1(inputs)
