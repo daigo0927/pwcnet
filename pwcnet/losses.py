@@ -17,7 +17,7 @@ def multiscale_loss(flow_true,
                     flow_pred_pyramid,
                     weights=[0.32, 0.08, 0.02, 0.01, 0.005]):
     flow_true = flow_true / 20.0
-    loss = tf.zeros([], dtype=tf.float32)
+    loss = 0.0
     for weight, flow_pred in zip(weights, flow_pred_pyramid):
         _, h, w, _ = tf.unstack(tf.shape(flow_pred))
         downflow_true = tf.image.resize(flow_true, (h, w))

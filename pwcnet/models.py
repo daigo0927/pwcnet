@@ -7,7 +7,7 @@ Daigo Hirooka
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import layers
-from modules import dense_warp, ConvBlock, FlowBlock
+from .modules import dense_warp, ConvBlock, FlowBlock
 
 
 class PWCNet(tf.keras.Model):
@@ -59,7 +59,7 @@ class PWCNet(tf.keras.Model):
         ])
 
     def call(self, inputs):
-        image_1, image_2 = inputs
+        image_1 = inputs[0]
         c_1_1 = self.cblock_1(image_1)
         c_1_2 = self.cblock_2(c_1_1)
         c_1_3 = self.cblock_3(c_1_2)
@@ -67,6 +67,7 @@ class PWCNet(tf.keras.Model):
         c_1_5 = self.cblock_5(c_1_4)
         c_1_6 = self.cblock_6(c_1_5)
 
+        image_2 = inputs[1]
         c_2_1 = self.cblock_1(image_2)
         c_2_2 = self.cblock_2(c_2_1)
         c_2_3 = self.cblock_3(c_2_2)
