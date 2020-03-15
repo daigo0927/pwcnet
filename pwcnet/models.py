@@ -57,6 +57,8 @@ class PWCNet(tf.keras.Model):
             layers.LeakyReLU(leak_rate),
             layers.Conv2D(2, (3, 3), (1, 1), 'same')
         ])
+        self.upsample = layers.UpSampling2D(size=(4, 4),
+                                            interpolation='bilinear')
 
     def call(self, inputs):
         image_1 = inputs[0]
@@ -103,5 +105,6 @@ class PWCNet(tf.keras.Model):
         flow_2, _, _ = self.fblock_2([cost_2, c_1_2, upflow_3, upfeat_3])
 
         flow_2 = flow_2 + self.context(flow_2)
+        flow = self.upsample(flow_2) * 20
 
-        return [flow_2, flow_3, flow_4, flow_5, flow_6]
+        return [flow_2, flow_3, flow_4, flow_5, flow_6], flow
