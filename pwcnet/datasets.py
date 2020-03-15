@@ -66,15 +66,17 @@ def _parse(sample):
     return [image1, image2, flow]
 
 
-def build_sintel_dataset(path, mode='clean'):
+def build_sintel_dataset(path, mode='clean', with_files=True):
     """ Build a MPI-Sintel dataset from a directory.
     
     Args:
       path: A string path to a directory containing a dataset.
       mode: A string 'clean' or 'final' specifying difficulties.
+      with_files: A boolean indicates whether return a list of files or not.
 
     Returns:
       tf.data.Dataset object containing the dataset.
+      A list containing the target files (optional).
     """
     d = Path(path)
     d_image = d / 'training' / mode
@@ -89,7 +91,11 @@ def build_sintel_dataset(path, mode='clean'):
 
     dataset = tf.data.Dataset.from_tensor_slices(samples)
     dataset = dataset.map(_parse)
-    return dataset
+
+    if with_files:
+        return dataset, samples
+    else:
+        return dataset
 
 
 def scaling(image1, image2, flow, image_scale=255, flow_scale=1.0):
