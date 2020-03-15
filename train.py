@@ -7,7 +7,7 @@ import tensorflow as tf
 from shutil import copyfile
 from functools import partial
 
-from pwcnet.datasets import (build_sintel_dataset, scaling_image, random_crop,
+from pwcnet.datasets import (build_sintel_dataset, scaling, random_crop,
                              random_horizontal_flip, random_vertical_flip,
                              concat_image)
 from pwcnet.models import PWCNet
@@ -27,37 +27,60 @@ def train(config, logdir):
     optimizer_config = config['train']['optimizer']
     validation_split = config['train']['validation_split']
 
-    dataset = build_sintel_dataset(sintel_dir, sintel_mode)
+    dataset, samples = build_sintel_dataset(sintel_dir,
+                                            sintel_mode,
+                                            with_files=True)
+    data_size = len(samples)
 
-    dataset = dataset.map(scaling_image)\
+    dataset = dataset.map(scaling)\
         .map(partial(random_crop, target_size=crop_size))\
         .map(random_horizontal_flip)\
-        .shuffle(500)\
+        .shuffle(data_size)\
         .batch(batch_size)\
-        .repeat(epochs)\
         .prefetch(tf.data.experimental.AUTOTUNE)
 
     model = PWCNet(**model_params)
 
     optimizer = tf.keras.optimizers.Adam(**optimizer_config)
 
-    # model.compile(optimizer, multiscale_loss)
-    # model.fit(dataset)
+    train_loss = tf.keras.metrics.Mean('loss', dtype=tf.float32)
+    train_epe = tf.keras.metrics.Mean('epe', dtype=tf.float32)
+    # val_loss = tf.keras.metrics.Mean('loss', dtype=tf.float32)
+    # val_epe = tf.keras.metrics.Mean('epe', dtype=tf.float32)
+
+    train_writer = tf.summary.create_file_writer(logdir + '/train')
+    # val_writer = tf.summary.create_file_writer(logdir + '/val')
 
     @tf.function
     def train_step(inputs, flow_true):
         with tf.GradientTape() as tape:
-            flow_pred_pyramid = model(inputs)
+            flow_pred_pyramid, flow_pred = model(inputs)
             loss = multiscale_loss(flow_true, flow_pred_pyramid)
+            epe = end_point_error(flow_true, flow_pred)
         grad = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grad, model.trainable_weights))
-        return loss
+        train_loss(loss)
+        train_epe(epe)
+        return loss, epe
 
-    for i, (images_1, images_2, flows_true) in enumerate(dataset):
-        loss = train_step([images_1, images_2], flows_true)
-        print(f'{i+1}/10: loss: {loss}')
-        if i == 0:
-            break
+    # @tf.function
+    # def val_step(inputs, flow_true):
+    #     flow_pred_pyramid, flow_pred = model(inputs)
+    #     loss = multiscale_loss(flow_true, flow_pred_pyramid)
+    #     epe = end_point_error(flow_true, flow_pred)
+    #     val_loss(loss)
+    #     val_epe(epe)
+
+    for e in range(epochs):
+        for b, (images_1, images_2, flows_true) in enumerate(dataset):
+            loss, epe = train_step([images_1, images_2], flows_true)
+            loss, epe = loss.numpy(), epe.numpy()
+            print(f'Epoch: {e+1}/{epochs} {b}step: loss: {loss}, epe: {epe}')
+        with train_writer.as_default():
+            tf.summary.scalar('loss', train_loss.result(), step=e)
+            tf.summary.scalar('epe', train_epe.result(), step=e)
+        train_loss.reset_states()
+        train_epe.reset_states()
 
 
 def run(config_file, debug):
