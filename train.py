@@ -25,6 +25,7 @@ def train(config, logdir):
     epochs = config['train']['epochs']
     batch_size = config['train']['batch_size']
     optimizer_config = config['train']['optimizer']
+    gamma = config['train']['gamma']
     validation_split = config['train']['validation_split']
 
     dataset, samples = build_sintel_dataset(sintel_dir,
@@ -56,6 +57,9 @@ def train(config, logdir):
         with tf.GradientTape() as tape:
             flow_pred_pyramid, flow_pred = model(inputs)
             loss = multiscale_loss(flow_true, flow_pred_pyramid)
+            weights_norm = tf.reduce_sum(
+                [tf.nn.l2_loss(w) for w in model.trainable_weights])
+            loss += gamma * weights_norm
             epe = end_point_error(flow_true, flow_pred)
         grad = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grad, model.trainable_weights))
