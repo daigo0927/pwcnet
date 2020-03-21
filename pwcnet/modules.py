@@ -100,7 +100,7 @@ class ConvBlock(layers.Layer):
         self.filters = filters
         self.rate = rate
 
-        # def build(self, input_shape):
+    def build(self, input_shape):
         self.conv_1 = layers.Conv2D(self.filters, 3, 2, 'same')
         self.conv_2 = layers.Conv2D(self.filters, 3, 1, 'same')
 
@@ -136,39 +136,6 @@ class FlowBlock(layers.Layer):
         x = self.conv_3(x)
         x = tf.nn.leaky_relu(x, self.rate)
         x = self.conv_4(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_5(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        flow = self.conv_f(x)
-        upflow = self.deconv(flow)
-        upfeat = self.upfeat(x)
-        return [flow, upflow, upfeat]
-
-
-class ContextBlock(layers.Layer):
-    def __init__(self, rate=0.1, **kwargs):
-        super(ContextBlock, self).__init__(**kwargs)
-        self.rate = rate
-
-    def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(128, 3, 1, 'same', delation_rate=1)
-        self.conv_2 = layers.Conv2D(128, 3, 1, 'same', delation_rate=2)
-        self.conv_3 = layers.Conv2D(128, 3, 1, 'same', delation_rate=4)
-        self.conv_4 = layers.Conv2D(96, 3, 1, 'same', delation_rate=8)
-        self.conv_5 = layers.Conv2D(64, 3, 1, 'same', delation_rate=16)
-        self.conv_6 = layers.Conv2D(32, 3, 1, 'same', delation_rate=1)
-        self.conv_f = layers.Conv2D(2, 3, 1, 'same')
-
-    def call(self, inputs):
-        x = self.conv_1(inputs)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_2(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_3(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_4(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_5(x)
         x = tf.nn.leaky_relu(x, self.rate)
         x = self.conv_5(x)
         x = tf.nn.leaky_relu(x, self.rate)
