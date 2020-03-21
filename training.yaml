@@ -1,7 +1,7 @@
 # A config file for traininig PWCNet
 
 sintel:
-  directory: 'MPI-Sintel'
+  directory: '/Users/Daigo/Data/MPI-Sintel-complete'
   mode: 'clean'
 
 preprocess:
