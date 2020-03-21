@@ -29,11 +29,11 @@ class PWCNet(tf.keras.Model):
         self.cblock_6 = ConvBlock(filters_list[5], leak_rate)
 
         self.cost_volume = tfa.layers.CorrelationCost(
-            kernel_size=2 * (max_displacement) + 1,
+            kernel_size=1,
             max_displacement=max_displacement,
             stride_1=1,
             stride_2=1,
-            pad=2 * max_displacement,
+            pad=max_displacement,
             data_format='channels_last')
 
         self.fblock_6 = FlowBlock(leak_rate)
