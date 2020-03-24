@@ -23,3 +23,4 @@ train:
     beta_2: 0.999
   validation_split: 0.1
 
+output_dir: '.'
