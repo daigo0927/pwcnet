@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.keras import layers
 
 
 def meshgrid(inputs):
@@ -91,3 +92,54 @@ def dense_warp(image, flow, interpolation='bilinear'):
     else:
         raise KeyError('invalid interpolation: %s' % interpolation)
     return pullback
+
+
+class ConvBlock(layers.Layer):
+    def __init__(self, filters, rate=0.1, **kwargs):
+        super(ConvBlock, self).__init__(**kwargs)
+        self.filters = filters
+        self.rate = rate
+
+    def build(self, input_shape):
+        self.conv_1 = layers.Conv2D(self.filters, 3, 2, 'same')
+        self.conv_2 = layers.Conv2D(self.filters, 3, 1, 'same')
+
+    def call(self, inputs):
+        x = self.conv_1(inputs)
+        x = tf.nn.leaky_relu(x, self.rate)
+        x = self.conv_2(x)
+        x = tf.nn.leaky_relu(x, self.rate)
+        return x
+
+
+class FlowBlock(layers.Layer):
+    def __init__(self, rate=0.1, **kwargs):
+        super(FlowBlock, self).__init__(**kwargs)
+        self.rate = rate
+
+    def build(self, input_shape):
+        self.conv_1 = layers.Conv2D(128, 3, 1, 'same')
+        self.conv_2 = layers.Conv2D(128, 3, 1, 'same')
+        self.conv_3 = layers.Conv2D(96, 3, 1, 'same')
+        self.conv_4 = layers.Conv2D(64, 3, 1, 'same')
+        self.conv_5 = layers.Conv2D(32, 3, 1, 'same')
+        self.conv_f = layers.Conv2D(2, 3, 1, 'same')
+        self.deconv = layers.Conv2DTranspose(2, 4, 2, 'same')
+        self.upfeat = layers.Conv2DTranspose(2, 4, 2, 'same')
+
+    def call(self, inputs):
+        x = tf.concat(inputs, axis=-1)
+        x = self.conv_1(x)
+        x = tf.nn.leaky_relu(x, self.rate)
+        x = self.conv_2(x)
+        x = tf.nn.leaky_relu(x, self.rate)
+        x = self.conv_3(x)
+        x = tf.nn.leaky_relu(x, self.rate)
+        x = self.conv_4(x)
+        x = tf.nn.leaky_relu(x, self.rate)
+        x = self.conv_5(x)
+        x = tf.nn.leaky_relu(x, self.rate)
+        flow = self.conv_f(x)
+        upflow = self.deconv(flow)
+        upfeat = self.upfeat(x)
+        return [flow, upflow, upfeat]
