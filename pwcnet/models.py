@@ -7,8 +7,8 @@ Daigo Hirooka
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from modules import dense_warp, cost_volume
-from modules import ConvBlock, DeepConvBlock, FlowBlock, DenseFlowBlock, ContextBlock
+from .modules import dense_warp, cost_volume
+from .modules import ConvBlock, DeepConvBlock, FlowBlock, DenseFlowBlock, ContextBlock
 
 
 class PWCNet(tf.keras.Model):
