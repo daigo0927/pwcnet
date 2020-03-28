@@ -7,10 +7,8 @@ import tensorflow as tf
 from shutil import copyfile
 from functools import partial
 
-from pwcnet.datasets import (build_sintel_dataset, scaling, random_crop,
-                             random_horizontal_flip, random_vertical_flip,
-                             concat_image)
-from pwcnet.models import PWCNet
+from pwcnet.datasets import build_sintel_dataset, scaling, random_crop
+from pwcnet.models import PWCDCNet
 from pwcnet.losses import multiscale_loss, multirobust_loss, end_point_error
 
 
@@ -35,12 +33,11 @@ def train(config, logdir):
 
     dataset = dataset.map(scaling)\
         .map(partial(random_crop, target_size=crop_size))\
-        .map(random_horizontal_flip)\
         .shuffle(data_size)\
         .batch(batch_size)\
         .prefetch(tf.data.experimental.AUTOTUNE)
 
-    model = PWCNet(**model_params)
+    model = PWCDCNet(**model_params)
 
     optimizer = tf.keras.optimizers.Adam(**optimizer_config)
 
@@ -60,20 +57,13 @@ def train(config, logdir):
             weights_norm = tf.reduce_sum(
                 [tf.nn.l2_loss(w) for w in model.trainable_weights])
             loss += gamma * weights_norm
-            epe = end_point_error(flow_true, flow_pred)
         grad = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grad, model.trainable_weights))
+
         train_loss(loss)
+        epe = end_point_error(flow_true, flow_pred)
         train_epe(epe)
         return loss, epe
-
-    # @tf.function
-    # def val_step(inputs, flow_true):
-    #     flow_pred_pyramid, flow_pred = model(inputs)
-    #     loss = multiscale_loss(flow_true, flow_pred_pyramid)
-    #     epe = end_point_error(flow_true, flow_pred)
-    #     val_loss(loss)
-    #     val_epe(epe)
 
     for e in range(epochs):
         for b, (images_1, images_2, flows_true) in enumerate(dataset):
