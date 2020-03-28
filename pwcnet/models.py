@@ -39,7 +39,7 @@ class PWCNet(tf.keras.Model):
         self.upsample = layers.UpSampling2D(size=(4, 4),
                                             interpolation='bilinear')
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         image_1 = inputs[0]
         c_1_1 = self.cblock_1(image_1)
         c_1_2 = self.cblock_2(c_1_1)
@@ -86,7 +86,10 @@ class PWCNet(tf.keras.Model):
         flow_2 = flow_2 + self.context(flow_2)
         flow = self.upsample(flow_2) * 20
 
-        return [flow_2, flow_3, flow_4, flow_5, flow_6], flow
+        if training:
+            return [flow_2, flow_3, flow_4, flow_5, flow_6]
+        else:
+            return flow
 
 
 class PWCDCNet(tf.keras.Model):
@@ -112,10 +115,12 @@ class PWCDCNet(tf.keras.Model):
         self.fblock_4 = DenseFlowBlock(leak_rate)
         self.fblock_3 = DenseFlowBlock(leak_rate)
         self.fblock_2 = DenseFlowBlock(leak_rate, is_output=True)
-
         self.context = ContextBlock(leak_rate)
 
-    def call(self, inputs):
+        self.upsample = layers.UpSampling2D(size=(4, 4),
+                                            interpolation='bilinear')
+
+    def call(self, inputs, training=None):
         image_1, image_2 = inputs
         c_1_1 = self.cblock_1(image_1)
         c_1_2 = self.cblock_2(c_1_1)
@@ -159,8 +164,12 @@ class PWCDCNet(tf.keras.Model):
         flow_2 = self.fblock_2([corr_2, c_1_2, upflow_3, upfeat_3])
 
         flow_2 = flow_2 + self.context(flow_2)
+        flow = self.upsample(flow_2) * 20
 
-        return [flow_2, flow_3, flow_4, flow_5, flow_6]
+        if training:
+            return [flow_2, flow_3, flow_4, flow_5, flow_6]
+        else:
+            return flow
 
 
 if __name__ == '__main__':
