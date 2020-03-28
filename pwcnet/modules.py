@@ -128,103 +128,114 @@ def cost_volume(c1, warp, search_range):
     return cv
 
 
-class ConvBlock(layers.Layer):
-    def __init__(self, filters, rate=0.1, **kwargs):
-        super(ConvBlock, self).__init__(**kwargs)
-        self.filters = filters
-        self.rate = rate
+def ConvBlock(filters, leak_rate=0.1, **kwargs):
+    seq = tf.keras.Sequential([
+        layers.Conv2D(filters, 3, 2, 'same'),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(filters, 3, 1, 'same'),
+        layers.LeakyReLU(leak_rate)
+    ], **kwargs)
+    return seq
 
-    def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(filters=self.filters,
-                                    kernel_size=(3, 3),
-                                    strides=(2, 2),
-                                    padding='same')
-        self.conv_2 = layers.Conv2D(filters=self.filters,
-                                    kernel_size=(3, 3),
-                                    strides=(1, 1),
-                                    padding='same')
 
-    def call(self, inputs):
-        x = self.conv_1(inputs)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_2(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        return x
+def DeepConvBlock(filters, leak_rate=0.1, **kwargs):
+    seq = tf.keras.Sequential([
+        layers.Conv2D(filters, 3, 2, 'same'),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(filters, 3, 1, 'same'),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(filters, 3, 1, 'same'),
+        layers.LeakyReLU(leak_rate)
+    ], **kwargs)
+    return seq
 
 
 class FlowBlock(layers.Layer):
-    def __init__(self, rate=0.1, **kwargs):
-        super(FlowBlock, self).__init__(**kwargs)
-        self.rate = rate
+    def __init__(self, leak_rate=0.1, is_output=False, **kwargs):
+        super().__init__(**kwargs)
+        self.leak_rate = leak_rate
+        self.is_output = is_output
 
-    def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(128, (3, 3), (1, 1), 'same')
-        self.conv_2 = layers.Conv2D(128, (3, 3), (1, 1), 'same')
-        self.conv_3 = layers.Conv2D(96, (3, 3), (1, 1), 'same')
-        self.conv_4 = layers.Conv2D(64, (3, 3), (1, 1), 'same')
-        self.conv_5 = layers.Conv2D(32, (3, 3), (1, 1), 'same')
-        self.conv_f = layers.Conv2D(2, (3, 3), (1, 1), 'same')
-        self.deconv = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
-        self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
+        self.seq = tf.keras.Sequential([
+            layers.Conv2D(128, (3, 3), (1, 1), 'same'),
+            layers.LeakyReLU(leak_rate),
+            layers.Conv2D(128, (3, 3), (1, 1), 'same'),
+            layers.LeakyReLU(leak_rate),
+            layers.Conv2D(96, (3, 3), (1, 1), 'same'),
+            layers.LeakyReLU(leak_rate),
+            layers.Conv2D(64, (3, 3), (1, 1), 'same'),
+            layers.LeakyReLU(leak_rate),
+            layers.Conv2D(32, (3, 3), (1, 1), 'same'),
+            layers.LeakyReLU(leak_rate),
+        ], **kwargs)
+        self.conv_f = layers.Conv2D(2, 3, 1, 'same')
+
+        if not is_output:
+            self.deconv = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
+            self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
 
     def call(self, inputs):
         x = tf.concat(inputs, axis=-1)
-        x = self.conv_1(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_2(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_3(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_4(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_5(x)
-        x = tf.nn.leaky_relu(x, self.rate)
+        x = self.seq(x)
         flow = self.conv_f(x)
-        upflow = self.deconv(flow)
-        upfeat = self.upfeat(x)
-        return [flow, upflow, upfeat]
+
+        if not self.is_output:
+            upflow = self.deconv(flow)
+            upfeat = self.upfeat(x)
+            return [flow, upflow, upfeat]
+        else:
+            return flow
 
 
-class ContextBlock(layers.Layer):
-    def __init__(self, rate=0.1, **kwargs):
-        super(ContextBlock, self).__init__(**kwargs)
-        self.rate = rate
+class DenseFlowBlock(layers.Layer):
+    def __init__(self, leak_rate=0.1, is_output=False, **kwargs):
+        super().__init__(**kwargs)
+        self.leak_rate = leak_rate
+        self.is_output = is_output
 
-    def build(self, input_shape):
-        self.conv_1 = layers.Conv2D(128, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(1, 1))
-        self.conv_2 = layers.Conv2D(128, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(2, 2))
-        self.conv_3 = layers.Conv2D(128, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(4, 4))
-        self.conv_4 = layers.Conv2D(96, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(8, 8))
-        self.conv_5 = layers.Conv2D(64, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(16, 16))
-        self.conv_6 = layers.Conv2D(32, (3, 3), (1, 1),
-                                    'same',
-                                    delation_rate=(1, 1))
-        self.conv_f = layers.Conv2D(2, (3, 3), (1, 1), 'same')
+        self.conv_1 = layers.Conv2D(128, 3, 1, 'same')
+        self.conv_2 = layers.Conv2D(128, 3, 1, 'same')
+        self.conv_3 = layers.Conv2D(96, 3, 1, 'same')
+        self.conv_4 = layers.Conv2D(64, 3, 1, 'same')
+        self.conv_5 = layers.Conv2D(32, 3, 1, 'same')
+        self.conv_f = layers.Conv2D(2, 3, 1, 'same')
+        self.act = layers.LeakyReLU(leak_rate)
+
+        if not is_output:
+            self.deconv = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
+            self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
 
     def call(self, inputs):
-        x = self.conv_1(inputs)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_2(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_3(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_4(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_5(x)
-        x = tf.nn.leaky_relu(x, self.rate)
-        x = self.conv_5(x)
-        x = tf.nn.leaky_relu(x, self.rate)
+        x = tf.concat(inputs, axis=-1)
+        x = tf.concat([self.act(self.conv_1(x)), x], axis=-1)
+        x = tf.concat([self.act(self.conv_2(x)), x], axis=-1)
+        x = tf.concat([self.act(self.conv_3(x)), x], axis=-1)
+        x = tf.concat([self.act(self.conv_4(x)), x], axis=-1)
+        x = tf.concat([self.act(self.conv_5(x)), x], axis=-1)
         flow = self.conv_f(x)
-        upflow = self.deconv(flow)
-        upfeat = self.upfeat(x)
-        return [flow, upflow, upfeat]
+
+        if not self.is_output:
+            upflow = self.deconv(flow)
+            upfeat = self.upfeat(x)
+            return [flow, upflow, upfeat]
+        else:
+            return flow
+
+
+def ContextBlock(leak_rate=0.1, **kwargs):
+    seq = tf.keras.Sequential([
+        layers.Conv2D(128, 3, 1, 'same', dilation_rate=1),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(128, 3, 1, 'same', dilation_rate=2),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(128, 3, 1, 'same', dilation_rate=4),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(96, 3, 1, 'same', dilation_rate=8),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(64, 3, 1, 'same', dilation_rate=16),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(32, 3, 1, 'same', dilation_rate=1),
+        layers.LeakyReLU(leak_rate),
+        layers.Conv2D(2, 3, 1, 'same')
+    ], **kwargs)
+    return seq
