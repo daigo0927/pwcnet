@@ -178,8 +178,6 @@ class FlowBlock(layers.Layer):
         x = tf.concat(inputs, axis=-1)
         x = self.seq(x)
         flow = self.conv_f(x)
-        upflow = self.deconv(flow)
-        upfeat = self.upfeat(x)
 
         if not self.is_output:
             upflow = self.deconv(flow)
