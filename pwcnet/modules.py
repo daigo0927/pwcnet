@@ -72,7 +72,7 @@ def bilinear_warp(image, flow):
     return pullback
 
 
-def dense_warp(image, flow, interpolation='bilinear'):
+def dense_warp(image, flow, interpolation='bilinear', name='dense_warp'):
     """ Pull back post-warp image with dense flow vectors.
 
     Args:
@@ -85,13 +85,14 @@ def dense_warp(image, flow, interpolation='bilinear'):
       A 4-D float Tensor with shape [batch, height, width, channels] and
         same type as the input image.
     """
-    if interpolation == 'nearest':
-        pullback = nearest_warp(image, flow)
-    elif interpolation == 'bilinear':
-        pullback = bilinear_warp(image, flow)
-    else:
-        raise KeyError('invalid interpolation: %s' % interpolation)
-    return pullback
+    with tf.name_scope(name):
+        if interpolation == 'nearest':
+            pullback = nearest_warp(image, flow)
+        elif interpolation == 'bilinear':
+            pullback = bilinear_warp(image, flow)
+        else:
+            raise KeyError('invalid interpolation: %s' % interpolation)
+        return pullback
 
 
 """
@@ -106,26 +107,29 @@ Based on:
 """
 
 
-def cost_volume(c1, warp, search_range):
-    """Build cost volume for associating a pixel from Image1 with its corresponding pixels in Image2.
+def cost_volume(c1, warp, search_range, name='cost_volume'):
+    """ Build cost volume for associating a pixel
+    from Image1 with its corresponding pixels in Image2.
+
     Args:
         c1: Level of the feature pyramid of Image1
         warp: Warped level of the feature pyramid of image22
         search_range: Search range (maximum displacement)
     """
-    padded_lvl = tf.pad(warp, [[0, 0], [search_range, search_range],
-                               [search_range, search_range], [0, 0]])
-    _, h, w, _ = tf.unstack(tf.shape(c1))
-    max_offset = search_range * 2 + 1
+    with tf.name_scope(name):
+        padded_lvl = tf.pad(warp, [[0, 0], [search_range, search_range],
+                                   [search_range, search_range], [0, 0]])
+        _, h, w, _ = tf.unstack(tf.shape(c1))
+        max_offset = search_range * 2 + 1
 
-    cv = []
-    for y in range(0, max_offset):
-        for x in range(0, max_offset):
-            slice = tf.slice(padded_lvl, [0, y, x, 0], [-1, h, w, -1])
-            cost = tf.reduce_mean(c1 * slice, axis=3, keepdims=True)
-            cv.append(cost)
-    cv = tf.concat(cv, axis=3)
-    return cv
+        cv = []
+        for y in range(0, max_offset):
+            for x in range(0, max_offset):
+                slice_ = tf.slice(padded_lvl, [0, y, x, 0], [-1, h, w, -1])
+                cost = tf.reduce_mean(c1 * slice_, axis=3, keepdims=True)
+                cv.append(cost)
+        cv = tf.concat(cv, axis=3)
+        return cv
 
 
 def ConvBlock(filters, leak_rate=0.1, **kwargs):
@@ -156,21 +160,22 @@ class FlowBlock(layers.Layer):
         self.leak_rate = leak_rate
         self.is_output = is_output
 
+    def build(self, input_shape):
         self.seq = tf.keras.Sequential([
             layers.Conv2D(128, (3, 3), (1, 1), 'same'),
-            layers.LeakyReLU(leak_rate),
+            layers.LeakyReLU(self.leak_rate),
             layers.Conv2D(128, (3, 3), (1, 1), 'same'),
-            layers.LeakyReLU(leak_rate),
+            layers.LeakyReLU(self.leak_rate),
             layers.Conv2D(96, (3, 3), (1, 1), 'same'),
-            layers.LeakyReLU(leak_rate),
+            layers.LeakyReLU(self.leak_rate),
             layers.Conv2D(64, (3, 3), (1, 1), 'same'),
-            layers.LeakyReLU(leak_rate),
+            layers.LeakyReLU(self.leak_rate),
             layers.Conv2D(32, (3, 3), (1, 1), 'same'),
-            layers.LeakyReLU(leak_rate),
-        ], **kwargs)
+            layers.LeakyReLU(self.leak_rate),
+        ])
         self.conv_f = layers.Conv2D(2, 3, 1, 'same')
 
-        if not is_output:
+        if not self.is_output:
             self.deconv = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
             self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
 
@@ -193,15 +198,16 @@ class DenseFlowBlock(layers.Layer):
         self.leak_rate = leak_rate
         self.is_output = is_output
 
+    def build(self, input_shape):
         self.conv_1 = layers.Conv2D(128, 3, 1, 'same')
         self.conv_2 = layers.Conv2D(128, 3, 1, 'same')
         self.conv_3 = layers.Conv2D(96, 3, 1, 'same')
         self.conv_4 = layers.Conv2D(64, 3, 1, 'same')
         self.conv_5 = layers.Conv2D(32, 3, 1, 'same')
         self.conv_f = layers.Conv2D(2, 3, 1, 'same')
-        self.act = layers.LeakyReLU(leak_rate)
+        self.act = layers.LeakyReLU(self.leak_rate)
 
-        if not is_output:
+        if not self.is_output:
             self.deconv = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
             self.upfeat = layers.Conv2DTranspose(2, (4, 4), (2, 2), 'same')
 

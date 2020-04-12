@@ -22,19 +22,34 @@ class PWCNet(tf.keras.Model):
         self.leak_rate = leak_rate
         self.max_displacement = max_displacement
 
-        self.cblock_1 = ConvBlock(filters_list[0], leak_rate)
-        self.cblock_2 = ConvBlock(filters_list[1], leak_rate)
-        self.cblock_3 = ConvBlock(filters_list[2], leak_rate)
-        self.cblock_4 = ConvBlock(filters_list[3], leak_rate)
-        self.cblock_5 = ConvBlock(filters_list[4], leak_rate)
-        self.cblock_6 = ConvBlock(filters_list[5], leak_rate)
+    def build(self, input_shape):
+        self.cblock_1 = ConvBlock(self.filters_list[0],
+                                  self.leak_rate,
+                                  name='cblock_1')
+        self.cblock_2 = ConvBlock(self.filters_list[1],
+                                  self.leak_rate,
+                                  name='cblock_2')
+        self.cblock_3 = ConvBlock(self.filters_list[2],
+                                  self.leak_rate,
+                                  name='cblock_3')
+        self.cblock_4 = ConvBlock(self.filters_list[3],
+                                  self.leak_rate,
+                                  name='cblock_4')
+        self.cblock_5 = ConvBlock(self.filters_list[4],
+                                  self.leak_rate,
+                                  name='cblock_5')
+        self.cblock_6 = ConvBlock(self.filters_list[5],
+                                  self.leak_rate,
+                                  name='cblock_6')
 
-        self.fblock_6 = FlowBlock(leak_rate)
-        self.fblock_5 = FlowBlock(leak_rate)
-        self.fblock_4 = FlowBlock(leak_rate)
-        self.fblock_3 = FlowBlock(leak_rate)
-        self.fblock_2 = FlowBlock(leak_rate, is_output=True)
-        self.context = ContextBlock(leak_rate)
+        self.fblock_6 = FlowBlock(self.leak_rate, name='fblock_6')
+        self.fblock_5 = FlowBlock(self.leak_rate, name='fblock_5')
+        self.fblock_4 = FlowBlock(self.leak_rate, name='fblock_4')
+        self.fblock_3 = FlowBlock(self.leak_rate, name='fblock_3')
+        self.fblock_2 = FlowBlock(self.leak_rate,
+                                  is_output=True,
+                                  name='fblock_2')
+        self.context = ContextBlock(self.leak_rate, name='context')
 
         self.upsample = layers.UpSampling2D(size=(4, 4),
                                             interpolation='bilinear')
@@ -100,19 +115,34 @@ class PWCDCNet(tf.keras.Model):
         self.leak_rate = leak_rate
         self.max_displacement = max_displacement
 
-        self.cblock_1 = DeepConvBlock(filters_list[0], leak_rate)
-        self.cblock_2 = DeepConvBlock(filters_list[1], leak_rate)
-        self.cblock_3 = DeepConvBlock(filters_list[2], leak_rate)
-        self.cblock_4 = DeepConvBlock(filters_list[3], leak_rate)
-        self.cblock_5 = DeepConvBlock(filters_list[4], leak_rate)
-        self.cblock_6 = DeepConvBlock(filters_list[5], leak_rate)
+    def build(self, input_shape):
+        self.cblock_1 = DeepConvBlock(self.filters_list[0],
+                                      self.leak_rate,
+                                      name='cblock_1')
+        self.cblock_2 = DeepConvBlock(self.filters_list[1],
+                                      self.leak_rate,
+                                      name='cblock_2')
+        self.cblock_3 = DeepConvBlock(self.filters_list[2],
+                                      self.leak_rate,
+                                      name='cblock_3')
+        self.cblock_4 = DeepConvBlock(self.filters_list[3],
+                                      self.leak_rate,
+                                      name='cblock_4')
+        self.cblock_5 = DeepConvBlock(self.filters_list[4],
+                                      self.leak_rate,
+                                      name='cblock_5')
+        self.cblock_6 = DeepConvBlock(self.filters_list[5],
+                                      self.leak_rate,
+                                      name='cblock_6')
 
-        self.fblock_6 = DenseFlowBlock(leak_rate)
-        self.fblock_5 = DenseFlowBlock(leak_rate)
-        self.fblock_4 = DenseFlowBlock(leak_rate)
-        self.fblock_3 = DenseFlowBlock(leak_rate)
-        self.fblock_2 = DenseFlowBlock(leak_rate, is_output=True)
-        self.context = ContextBlock(leak_rate)
+        self.fblock_6 = DenseFlowBlock(self.leak_rate, name='fblock_6')
+        self.fblock_5 = DenseFlowBlock(self.leak_rate, name='fblock_5')
+        self.fblock_4 = DenseFlowBlock(self.leak_rate, name='fblock_4')
+        self.fblock_3 = DenseFlowBlock(self.leak_rate, name='fblock_3')
+        self.fblock_2 = DenseFlowBlock(self.leak_rate,
+                                       is_output=True,
+                                       name='fblock_2')
+        self.context = ContextBlock(self.leak_rate, name='context')
 
         self.upsample = layers.UpSampling2D(size=(4, 4),
                                             interpolation='bilinear')
@@ -167,22 +197,28 @@ class PWCDCNet(tf.keras.Model):
 
 
 if __name__ == '__main__':
+    # Dummy inputs
+    import numpy as np
+    inputs = [
+        np.random.normal(size=(1, 384, 448, 3)),
+        np.random.normal(size=(1, 384, 448, 3))
+    ]
+
     model = PWCDCNet(name='pwcdcnet')
+    # Dummy inference to build variables (which is redundant to be visualized)
+    _ = model(inputs)
 
     @tf.function
-    def forward(x_1, x_2):
-        return model([x_1, x_2])
+    def forward(inputs):
+        return model(inputs)
 
     from datetime import datetime
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     logdir = 'logs_test/func/%s' % stamp
     writer = tf.summary.create_file_writer(logdir)
 
-    x_1 = tf.random.uniform((1, 384, 448, 3))
-    x_2 = tf.random.uniform((1, 384, 448, 3))
-
     tf.summary.trace_on(graph=True, profiler=True)
-    y = forward(x_1, x_2)
+    outputs = forward(inputs)
     with writer.as_default():
         tf.summary.trace_export(name='pwcdcnet_trace',
                                 step=0,
