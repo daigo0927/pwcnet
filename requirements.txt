@@ -14,7 +14,7 @@ h5py==2.7.1
 html5lib==0.9999999
 imageio==2.3.0
 ipykernel==4.8.2
-ipython==6.3.1
+ipython==7.16.3
 ipython-genutils==0.2.0
 ipywidgets==7.2.1
 jedi==0.12.0
